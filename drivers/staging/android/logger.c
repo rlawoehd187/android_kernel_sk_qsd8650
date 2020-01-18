@@ -28,6 +28,10 @@
 
 #include <asm/ioctls.h>
 
+#ifdef CONFIG_PANIC_LOG_SAVE
+#include <linux/rtc.h>
+#endif
+
 /*
  * struct logger_log - represents a specific log, such as 'main' or 'radio'
  *
@@ -571,6 +575,201 @@ static struct logger_log *get_log_from_minor(int minor)
 		return &log_system;
 	return NULL;
 }
+#ifdef CONFIG_PANIC_LOG_SAVE
+
+typedef struct logger_hdr {
+	uint16_t  len;
+	uint16_t  __pad;
+	int32_t   pid;
+	int32_t   tid;
+	int32_t   sec;
+	int32_t   nsec;
+} logger_hdr_type;
+
+static char tmpbuf[512];
+static char log_tmp[4*1024];
+
+static int offset =0;
+static int logsize =0;
+static struct logger_reader rdr;
+
+void logger_get_log_init(void)
+{
+	struct logger_reader* reader=&rdr;
+	struct logger_log *const log =&log_main;
+
+	offset =0;
+	memset(tmpbuf, 0x00, 512);
+	
+	reader->log = log;
+	INIT_LIST_HEAD(&reader->list);
+
+	mutex_lock(&log->mutex);
+	reader->r_off = log->head;
+	list_add_tail(&reader->list, &log->readers);
+
+	if (log->w_off >= reader->r_off)
+		logsize = log->w_off - reader->r_off;
+	else
+		logsize = (log->size - reader->r_off) + log->w_off;
+	
+	mutex_unlock(&log->mutex);
+
+}
+EXPORT_SYMBOL(logger_get_log_init);
+
+int logger_get_read_log(char *buf, int size)
+{
+	size_t count;
+	size_t len =0;
+
+	struct logger_reader* reader=&rdr;
+	struct logger_log * const log =&log_main;
+
+	mutex_lock(&log->mutex);
+
+	if (log->w_off == reader->r_off) {
+		mutex_unlock(&log->mutex);
+		return 0;
+	}
+	
+	do {
+		/*
+ 		* Check if the r_off was already adjusted in fix_up_readers
+ 		*/
+		count = get_entry_len(log, reader->r_off);
+		if (count > size) {
+			mutex_unlock(&log->mutex);
+			return -EINVAL;
+		}
+		
+		len = min(count, log->size - reader->r_off);
+
+		/*
+ 		* We read from the log in two disjoint operations. First, we read from
+ 		* the current read head offset up to 'count' bytes or to the end of
+ 		* the log, whichever comes first.
+ 		*/
+		memcpy(buf, log->buffer + reader->r_off, len);
+
+		/*
+ 		* Second, we read any remaining bytes, starting back at the head of
+ 		* the log.
+ 		*/
+		if (count != len)
+			memcpy(buf + len, log->buffer, count - len);
+
+		reader->r_off = logger_offset(reader->r_off + count);
+
+		if (log->w_off >= reader->r_off)
+			logsize = log->w_off - reader->r_off;
+		else
+			logsize = (log->size - reader->r_off) + log->w_off;
+	}while(logsize > 40*1024); //for buffer size 	
+		
+	mutex_unlock(&log->mutex);
+
+	return len;
+}
+
+static char logger_pri_to_char(char pri)
+{
+	switch(pri)
+	{
+		case 2: return 'V';
+		case 3: return 'D';
+		case 4: return 'I';
+		case 5: return 'W';
+		case 6: return 'E';
+		case 7: return 'F';
+		case 8: return 'S';
+		default: return '?';
+	}
+}
+
+#define __LOGGER_BUF_LEN	((1 << CONFIG_LOG_BUF_SHIFT) >> 1)
+
+int logger_parsing(char* src,char* des, int size)
+{
+	uint16_t pos;
+	uint16_t pktlen =0;
+	char *tag, *msg;
+	uint8_t taglen=0, msglen=0;
+	int prefixLen;
+	char prichar;
+	logger_hdr_type* hdr;
+	char timeBuf[32];
+	struct rtc_time tmBuf;
+
+	if (size > sizeof(tmpbuf))
+		return -1;
+
+	hdr = (logger_hdr_type *)src;
+	memcpy(&pktlen, src, sizeof(uint16_t));
+
+	pos = sizeof(logger_hdr_type) + 1; // pri =1
+	hdr->sec -= (sys_tz.tz_minuteswest*60);
+	rtc_time_to_tm((unsigned long)hdr->sec, &tmBuf);
+
+	sprintf(timeBuf,"%d-%d %d:%d:%d", tmBuf.tm_mon+1, tmBuf.tm_mday, tmBuf.tm_hour, tmBuf.tm_min , tmBuf.tm_sec);
+
+	prichar=logger_pri_to_char(src[pos-1]);
+
+
+	tag = &src[pos];
+	taglen =strlen(&src[pos]);
+	msglen = pktlen-taglen-3; // pri+ tag(\0)+msg(\0)
+	msg = tag+taglen+1;  // tag(\0) 
+
+
+	prefixLen = snprintf(tmpbuf,sizeof(tmpbuf),
+				"%s.%03d %c/%-8s(%5d): ",timeBuf, hdr->nsec / 1000000,
+				prichar, tag, hdr->pid);
+
+
+	if (offset+prefixLen+msglen >= __LOGGER_BUF_LEN)
+	{
+		printk(KERN_ERR "logger: error buffer size:%d \n", offset);
+		return offset;
+	}
+	
+	memcpy(&tmpbuf[prefixLen], msg, msglen);
+	memcpy(&des[offset], tmpbuf, prefixLen+msglen);
+	offset +=(prefixLen+msglen);
+
+	if (des[offset-1] != '\n')
+	{
+		des[offset] = '\n';
+		offset +=1;
+	}
+	
+	return offset;
+}
+
+int logger_get_logcat(char* buf)
+{
+	int n=0;
+	int i=0;
+	struct logger_reader* reader=&rdr;
+	struct logger_log * const log =&log_main;
+
+	while(1) {
+		n = logger_get_read_log(log_tmp, 4*1024);
+		if (n <= 0) {
+			printk(KERN_ERR "logger_get_read_log: end %d\n", n);
+			break;
+		}
+		else {
+			i += logger_parsing(log_tmp, buf,n);	
+		}
+	}
+	mutex_lock(&log->mutex);
+	list_del(&reader->list);
+	mutex_unlock(&log->mutex);
+	return i;
+}
+EXPORT_SYMBOL(logger_get_logcat);
+#endif /*CONFIG_PANIC_LOG_SAVE*/
 
 static int __init init_log(struct logger_log *log)
 {

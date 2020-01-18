@@ -537,4 +537,15 @@ extern unsigned int	pm_flags;
 #define PM_APM	1
 #define PM_ACPI	2
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+enum dev_boot_state {
+	DEV_BOOT_ON_PROGRESSING,
+	DEV_BOOT_COMPLETED,
+	DEV_BOOT_OFF_PROGRESSING
+};
+
+extern void msm_pm_set_dev_boot_complete(void);
+extern int msm_pm_get_dev_boot_state(void);
+#endif
+
 #endif /* _LINUX_PM_H */

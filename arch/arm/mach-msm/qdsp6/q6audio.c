@@ -52,6 +52,65 @@ struct q6_hw_info {
 
 /* TODO: provide mechanism to configure from board file */
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+
+/* Table for 3G and normal case */
+static struct q6_hw_info q6_audio_hw[Q6_HW_COUNT] = {
+	[Q6_HW_HANDSET] = {
+		.min_gain = -2500,
+		.max_gain = 602,
+	},
+	[Q6_HW_HEADSET] = {
+		.min_gain = -3500,
+		.max_gain = 400,
+	},
+	[Q6_HW_SPEAKER] = {
+		.min_gain = -903,
+		.max_gain = 602,
+	},
+	[Q6_HW_TTY] = {
+		.min_gain = -2000,
+		.max_gain = 0,
+	},
+	[Q6_HW_BT_SCO] = {
+		.min_gain = -903,
+		.max_gain = 602,
+	},
+	[Q6_HW_BT_A2DP] = {
+		.min_gain = -903,
+		.max_gain = 602,
+	},
+};
+
+/* Table for VoIP, VT. For audio tunning, table is seperated */
+static struct q6_hw_info q6_audio_hw_for_voip[Q6_HW_COUNT] = {
+	[Q6_HW_HANDSET] = {
+		.min_gain = -2500,
+		.max_gain = 602,
+	},
+	[Q6_HW_HEADSET] = {
+		.min_gain = -1100,
+		.max_gain = 400,
+	},
+	[Q6_HW_SPEAKER] = {
+		.min_gain = -903,
+		.max_gain = 602,
+	},
+	[Q6_HW_TTY] = {
+		.min_gain = -2000,
+		.max_gain = 0,
+	},
+	[Q6_HW_BT_SCO] = {
+		.min_gain = -903,
+		.max_gain = 602,
+	},
+	[Q6_HW_BT_A2DP] = {
+		.min_gain = -903,
+		.max_gain = 602,
+	},
+};
+
+#else
 static struct q6_hw_info q6_audio_hw[Q6_HW_COUNT] = {
 	[Q6_HW_HANDSET] = {
 		.min_gain = -400,
@@ -78,6 +137,7 @@ static struct q6_hw_info q6_audio_hw[Q6_HW_COUNT] = {
 		.max_gain = 400,
 	},
 };
+#endif
 
 static struct wake_lock wakelock;
 static struct wake_lock idlelock;
@@ -187,7 +247,22 @@ int q6_device_volume(uint32_t device_id, int level)
 	struct q6_device_info *di = q6_lookup_device(device_id, 0);
 	struct q6_hw_info *hw;
 
+#ifdef 	CONFIG_MACH_QSD8X50_S1
+	if (level & 0x100)
+	{
+		level &= ~(0x100);
+		hw = &q6_audio_hw_for_voip[di->hw];
+	}
+	else
+	{
+		hw = &q6_audio_hw[di->hw];
+	}
+#else
 	hw = &q6_audio_hw[di->hw];
+#endif
+
+	printk(KERN_ERR "min:%d, max:%d, cur:%d\n", hw->min_gain, hw->max_gain,
+		hw->min_gain + ((hw->max_gain - hw->min_gain) * level) / 100);
 
 	return hw->min_gain + ((hw->max_gain - hw->min_gain) * level) / 100;
 }
@@ -1020,6 +1095,48 @@ static void audio_tx_analog_enable(int en)
 	}
 }
 
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+#define TUNE_ITEM_CTR	6
+
+static struct s1_tune_acdb_info g_tblTune[TUNE_ITEM_CTR];
+
+int acdb_get_config_table_ext(struct s1_tune_acdb_info *pInfo)
+{
+	int      rc;
+	uint32_t cad_id;
+
+	printk(KERN_ERR ">>> acdb_get_config_table_ext %d %x %d\n", pInfo->index, pInfo->device_id, pInfo->sample_rate);
+	
+	cad_id = q6_device_to_cad_id(pInfo->device_id);
+	rc = acdb_get_config_table(cad_id, pInfo->sample_rate);
+	if (rc > 0)
+	{
+		pInfo->index       = 0;
+		pInfo->dwRealLen   = rc;
+		memcpy(pInfo->aucBuf, audio_data, 4096);
+	}
+	else
+	{
+		pInfo->dwRealLen = 0;
+	}
+
+	return (rc);
+}
+
+int acdb_set_config_table_ext(struct s1_tune_acdb_info *pInfo)
+{
+	if (pInfo->index >= TUNE_ITEM_CTR)
+	{
+		return (-1);
+	}
+	memcpy(&g_tblTune[pInfo->index], pInfo, sizeof(struct s1_tune_acdb_info));
+	return (0);
+}
+
+#endif
+
+
 static int audio_update_acdb(uint32_t adev, uint32_t acdb_id)
 {
 	uint32_t sample_rate;
@@ -1043,6 +1160,24 @@ static int audio_update_acdb(uint32_t adev, uint32_t acdb_id)
 		acdb_id = q6_device_to_cad_id(adev);
 
 	sz = acdb_get_config_table(acdb_id, sample_rate);
+	
+#ifdef CONFIG_MACH_QSD8X50_S1
+	{
+		int i;
+
+		for (i = 0; i < TUNE_ITEM_CTR; i++)
+		{
+			if (acdb_id == q6_device_to_cad_id(g_tblTune[i].device_id) && 
+			    sample_rate == g_tblTune[i].sample_rate)
+			{
+				printk(KERN_ERR ">>>>> Found table : %x (org size:%d) (new size:%d)\n", g_tblTune[i].device_id, sz, g_tblTune[i].dwRealLen);
+				memcpy(audio_data, g_tblTune[i].aucBuf, 4096);
+				sz = g_tblTune[i].dwRealLen;
+				break;
+			}
+		}
+	}
+#endif
 	audio_set_table(ac_control, adev, sz);
 
 	return 0;
@@ -1055,8 +1190,7 @@ static void adie_rx_path_enable(uint32_t acdb_id)
 	adie_set_path_freq_plan(adie, ADIE_PATH_RX, 48000);
 
 	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_READY);
-	adie_proceed_to_stage(adie, ADIE_PATH_RX,
-			ADIE_STAGE_DIGITAL_ANALOG_READY);
+	adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_ANALOG_READY);
 }
 
 static void q6_rx_path_enable(int reconf, uint32_t acdb_id)
@@ -1102,7 +1236,7 @@ static void _audio_tx_path_enable(int reconf, uint32_t acdb_id)
 		qdsp6_devchg_notify(ac_control, ADSP_AUDIO_TX_DEVICE, audio_tx_device_id);
 	qdsp6_standby(ac_control);
 	qdsp6_start(ac_control);
-
+	
 	audio_tx_mute(ac_control, audio_tx_device_id, tx_mute_status);
 }
 
@@ -1369,7 +1503,6 @@ int q6audio_set_tx_mute(int mute)
 		return 0;
 
 	mutex_lock(&audio_path_lock);
-
 	if (mute == tx_mute_status) {
 		mutex_unlock(&audio_path_lock);
 		return 0;
@@ -1385,6 +1518,7 @@ int q6audio_set_tx_mute(int mute)
 			(rc == ADSP_AUDIO_STATUS_EUNSUPPORTED))
 		tx_mute_status = mute;
 	mutex_unlock(&audio_path_lock);
+
 	return 0;
 }
 
@@ -1407,6 +1541,12 @@ int q6audio_set_rx_volume(int level)
 	uint32_t adev;
 	int vol;
 
+#ifdef 	CONFIG_MACH_QSD8X50_S1
+	int flag;
+
+	flag  = level & 0x100;
+	level = level & (~0x100);
+#endif
 	if (q6audio_init())
 		return 0;
 
@@ -1415,13 +1555,48 @@ int q6audio_set_rx_volume(int level)
 
 	mutex_lock(&audio_path_lock);
 	adev = ADSP_AUDIO_DEVICE_ID_VOICE;
+#ifdef 	CONFIG_MACH_QSD8X50_S1
+	vol = q6_device_volume(audio_rx_device_id, level | flag);
+#else
 	vol = q6_device_volume(audio_rx_device_id, level);
+#endif
 	audio_rx_mute(ac_control, adev, 0);
 	audio_rx_volume(ac_control, adev, vol);
 	rx_vol_level = level;
 	mutex_unlock(&audio_path_lock);
+	printk(KERN_ERR ":::: q6audio_set_rx_volume :::: %d\n", rx_vol_level);
 	return 0;
 }
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+int q6audio_get_tx_mute(void)
+{
+	int mute;
+
+	mutex_lock(&audio_path_lock);
+	mute = tx_mute_status;
+	mutex_unlock(&audio_path_lock);
+    
+	return mute;
+}
+
+int mVoiceMute = 0;
+
+int q6audio_set_rx_mute(int mute)
+{
+	uint32_t adev;
+
+	if (q6audio_init())
+		return 0;
+
+	mutex_lock(&audio_path_lock);
+	adev = audio_rx_device_id;
+	audio_rx_mute(ac_control, adev, mute);
+	mVoiceMute = mute;
+	mutex_unlock(&audio_path_lock);
+	return 0;
+}
+#endif
 
 static void do_rx_routing(uint32_t device_id, uint32_t acdb_id)
 {
@@ -1705,6 +1880,7 @@ struct audio_client *q6audio_open_mp3(uint32_t bufsz, uint32_t rate,
 	audio_rx_volume(ac_control, audio_rx_device_id,
 			q6_device_volume(audio_rx_device_id, rx_vol_level));
 	mutex_unlock(&audio_path_lock);
+
 	return ac;
 }
 

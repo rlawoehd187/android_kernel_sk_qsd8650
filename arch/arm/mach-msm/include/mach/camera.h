@@ -34,6 +34,9 @@
 #else
 #define CDBG(fmt, args...) do { } while (0)
 #endif
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON) // FEATURE_SKTS_CAM_KERNEL_DEBUG_MSG
+#define SDBG(fmt, args...) printk(KERN_INFO "msm_camera: " fmt, ##args)
+#endif
 
 #define MSM_CAMERA_MSG 0
 #define MSM_CAMERA_EVT 1

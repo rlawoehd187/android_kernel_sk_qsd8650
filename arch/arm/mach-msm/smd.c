@@ -165,6 +165,10 @@ static inline void notify_dsp_smd(void)
 	MSM_TRIG_A2Q6_SMD_INT;
 }
 
+#ifdef CONFIG_PANIC_LOG_SAVE
+extern int panic_write_log(void);
+#endif
+
 void smd_diag(void)
 {
 	char *x;
@@ -174,19 +178,31 @@ void smd_diag(void)
 	if (x != 0) {
 		x[SZ_DIAG_ERR_MSG - 1] = 0;
 		SMD_INFO("smem: DIAG '%s'\n", x);
+#ifdef CONFIG_PANIC_DISP_LOG		
+		dispdebug("smem: DIAG '%s'\n", x);
+#endif
 	}
 
 	x = smem_get_entry(SMEM_ERR_CRASH_LOG, &size);
 	if (x != 0) {
 		x[size - 1] = 0;
 		pr_err("smem: CRASH LOG\n'%s'\n", x);
+#ifdef CONFIG_PANIC_DISP_LOG		
+		dispdebug("smem: CRASH LOG\n'%s'\n", x);
+#endif
 	}
+#ifdef CONFIG_PANIC_LOG_SAVE
+	panic_write_log();
+#endif
 }
 
 
 static void handle_modem_crash(void)
 {
 	pr_err("ARM9 has CRASHED\n");
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("ARM9 has CRASHED\n");
+#endif
 	smd_diag();
 
 	/* hard reboot if possible FIXME

@@ -99,6 +99,8 @@ int mdp_lcdc_on(struct platform_device *pdev)
 	uint32 block = MDP_DMA2_BLOCK;
 	int ret;
 
+	printk(KERN_WARNING "%s\n", __func__);
+
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
 
 	if (!mfd)
@@ -134,6 +136,9 @@ int mdp_lcdc_on(struct platform_device *pdev)
 		dma2_cfg_reg |= DMA_IBUF_FORMAT_xRGB8888_OR_ARGB8888;
 
 	switch (mfd->panel_info.bpp) {
+#ifdef CONFIG_MACH_QSD8X50_S1
+	case 32:
+#endif
 	case 24:
 		dma2_cfg_reg |= DMA_DSTC0G_8BITS |
 		    DMA_DSTC1B_8BITS | DMA_DSTC2R_8BITS;
@@ -241,8 +246,14 @@ int mdp_lcdc_on(struct platform_device *pdev)
 
 	lcdc_underflow_clr |= 0x80000000;	/* enable recovery */
 #else
+  #ifdef CONFIG_MACH_QSD8X50_S1
+	// TJ for S1
+	hsync_polarity = 1;
+	vsync_polarity = 1;
+  #else
 	hsync_polarity = 0;
 	vsync_polarity = 0;
+  #endif
 #endif
 	data_en_polarity = 0;
 
@@ -294,6 +305,10 @@ int mdp_lcdc_off(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd;
 	uint32 timer_base = LCDC_BASE;
 	uint32 block = MDP_DMA2_BLOCK;
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+	printk(KERN_WARNING "%s\n", __func__);
+#endif
 
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
 

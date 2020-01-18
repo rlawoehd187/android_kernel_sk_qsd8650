@@ -22,7 +22,6 @@
 */
 
 #include <linux/cdev.h>
-#include <linux/delay.h>
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/list.h>
@@ -59,7 +58,7 @@
 #define TRACE(fmt,x...)		do { } while (0)
 #endif
 
-#define MAX_SUPPORTED_INSTANCES 1
+#define MAX_SUPPORTED_INSTANCES (3) //sean
 
 enum {
 	VDEC_DALRPC_INITIALIZE = DAL_OP_FIRST_DEVICE_API,
@@ -546,8 +545,8 @@ static int vdec_close(struct vdec_data *vd, void *argp)
 	pr_info("q6vdec_close()\n");
 	vd->close_decode = 1;
 	wake_up(&vd->vdec_msg_evt);
-
-	ret = dal_call_f0(vd->vdec_handle, DAL_OP_CLOSE, 0);
+	
+	ret = dal_call_f0(vd->vdec_handle, DAL_OP_CLOSE, 0);	
 	if (ret)
 		pr_err("%s: failed to close daldevice (%d)\n", __func__, ret);
 
@@ -558,6 +557,7 @@ static int vdec_close(struct vdec_data *vd, void *argp)
 
 	return ret;
 }
+
 static int vdec_getdecattributes(struct vdec_data *vd, void *argp)
 {
 	struct {

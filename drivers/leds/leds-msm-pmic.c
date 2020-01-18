@@ -24,20 +24,49 @@
 
 #include <mach/pmic.h>
 
+#include <mach/board-s1.h>
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_WS01)
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+static int g_led_val = -1;
+#else
 #define MAX_KEYPAD_BL_LEVEL	16
+#endif
 
 static void msm_keypad_bl_led_set(struct led_classdev *led_cdev,
 	enum led_brightness value)
 {
 	int ret;
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+	int led_val;
+
+	if(value == LED_OFF)
+		led_val = 0;
+	else if((value > LED_OFF) && (value <= LED_HALF))
+		led_val = 1;
+	else
+		led_val = 2;
+
+	if (g_led_val == led_val)
+		return;
+	g_led_val = led_val;
+	printk(KERN_INFO "%s: value : %d	led_val : %d\n", __func__, value, led_val);
+	ret = pmic_set_led_intensity(LED_LCD, led_val);
+#else
 	ret = pmic_set_led_intensity(LED_KEYPAD, value / MAX_KEYPAD_BL_LEVEL);
+#endif
 	if (ret)
 		dev_err(led_cdev->dev, "can't set keypad backlight\n");
 }
 
 static struct led_classdev msm_kp_bl_led = {
+#ifdef CONFIG_MACH_QSD8X50_S1
+	.name			= "button-backlight",
+#else
 	.name			= "keyboard-backlight",
+#endif	
 	.brightness_set		= msm_keypad_bl_led_set,
 	.brightness		= LED_OFF,
 };
@@ -108,3 +137,5 @@ module_exit(msm_pmic_led_exit);
 MODULE_DESCRIPTION("MSM PMIC LEDs driver");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:pmic-leds");
+
+#endif

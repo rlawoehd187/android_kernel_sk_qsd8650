@@ -45,6 +45,11 @@
 #include "gpio.h"
 #include "timer.h"
 #include "pm.h"
+#ifdef CONFIG_MACH_QSD8X50_S1
+#include "proc_comm.h"
+
+static int dev_boot_status = DEV_BOOT_ON_PROGRESSING;
+#endif
 
 enum {
 	MSM_PM_DEBUG_SUSPEND = 1U << 0,
@@ -675,6 +680,9 @@ static uint32_t restart_reason = 0x776655AA;
 
 static void msm_pm_power_off(void)
 {
+#ifdef CONFIG_MACH_QSD8X50_S1
+	dev_boot_status = DEV_BOOT_OFF_PROGRESSING;
+#endif
 	msm_rpcrouter_close();
 	msm_proc_comm(PCOM_POWER_DOWN, 0, 0);
 	for (;;) ;
@@ -682,6 +690,9 @@ static void msm_pm_power_off(void)
 
 static void msm_pm_restart(char str, const char *cmd)
 {
+#ifdef CONFIG_MACH_QSD8X50_S1
+	dev_boot_status = DEV_BOOT_OFF_PROGRESSING;
+#endif
 	msm_rpcrouter_close();
 	msm_proc_comm(PCOM_RESET_CHIP, &restart_reason, 0);
 
@@ -860,10 +871,76 @@ write_proc_failed:
 #undef MSM_PM_STATS_RESET
 #endif /* CONFIG_MSM_IDLE_STATS */
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+static int boot_status_called = 0;
+#define MSM_PM_BOOT_COMPLEATED "bootcomplete"
+extern void msm_batt_update_psy_status(void);
+
+void msm_pm_set_dev_boot_complete(void)
+{
+//	if (dev_boot_status == DEV_BOOT_ON_PROGRESSING)
+//	{
+		printk(KERN_INFO "%s !!!\n", __func__);
+		msm_proc_comm(PCOM_OEM_BOOT_COMPLETED, NULL, NULL);
+		dev_boot_status = DEV_BOOT_COMPLETED;
+		msm_batt_update_psy_status();
+//	}
+}
+EXPORT_SYMBOL(msm_pm_set_dev_boot_complete);
+
+static int msm_pm_boot_write_proc(struct file *file, const char __user *buffer,
+	unsigned long count, void *data)
+{
+	char buf[sizeof(MSM_PM_BOOT_COMPLEATED)];
+	int ret;
+
+	printk(KERN_INFO "%s +\n", __func__);
+
+	if (boot_status_called >= 2)
+		return -EINVAL;
+
+	if (count < strlen(MSM_PM_BOOT_COMPLEATED)) {
+		ret = -EINVAL;
+		goto boot_write_proc_failed;
+	}
+
+	if (copy_from_user(&buf, buffer, strlen(MSM_PM_BOOT_COMPLEATED))) {
+		ret = -EFAULT;
+		goto boot_write_proc_failed;
+	}
+
+	if (memcmp(buf, MSM_PM_BOOT_COMPLEATED, strlen(MSM_PM_BOOT_COMPLEATED))) {
+		ret = -EINVAL;
+		goto boot_write_proc_failed;
+	}
+
+	boot_status_called++;
+
+	msm_pm_set_dev_boot_complete();
+
+	printk(KERN_INFO "%s -\n", __func__);
+
+	return count;
+
+boot_write_proc_failed:
+	return ret;
+}
+#undef MSM_PM_BOOT_COMPLEATED
+
+int msm_pm_get_dev_boot_state(void)
+{
+	return dev_boot_status;
+}
+EXPORT_SYMBOL(msm_pm_get_dev_boot_state);
+#endif
+
 static int __init msm_pm_init(void)
 {
 #ifdef CONFIG_MSM_IDLE_STATS
 	struct proc_dir_entry *d_entry;
+#endif
+#ifdef CONFIG_MACH_QSD8X50_S1
+	struct proc_dir_entry *boot_d_entry;
 #endif
 	int ret;
 
@@ -934,6 +1011,15 @@ static int __init msm_pm_init(void)
 		d_entry->read_proc = msm_pm_read_proc;
 		d_entry->write_proc = msm_pm_write_proc;
 		d_entry->data = NULL;
+	}
+#endif
+#ifdef CONFIG_MACH_QSD8X50_S1
+	boot_d_entry = create_proc_entry("msm_pm_boot_status",
+			S_IRUGO | S_IWUSR | S_IWGRP, NULL);
+	if (boot_d_entry) {
+		boot_d_entry->read_proc = NULL;
+		boot_d_entry->write_proc = msm_pm_boot_write_proc;
+		boot_d_entry->data = NULL;
 	}
 #endif
 

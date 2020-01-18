@@ -25,7 +25,26 @@
 #include <linux/etherdevice.h>
 #include <linux/crc32.h>
 
+#include <linux/workqueue.h> /* 2010-05-07 ykjeon@sk-w.com */
+
 #include "u_ether.h"
+
+
+/*
+ * Kernel.org patch "USB: gadget eth: Fix calculate CRC32 in EEM" (2010-06-20) is applied.
+ * 2010-10-15 ykjeon@sk-w.com
+ */
+
+/*
+ * "__initdata", "__init" attributes are removed for Android USB composition.
+ * 2010-07-21 (ykjeon@sk-w.com)
+ */
+
+/*
+ * SK telesys Specific Setup Data Processing for EEM. 2010-05-07 (ykjeon@sk-w.com)
+ */
+#define SKTS_EEM_SETUP_DATA_PROCESS
+
 
 #define EEM_HLEN 2
 
@@ -47,6 +66,20 @@ struct f_eem {
 	struct eem_ep_descs		hs;
 };
 
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+/* SKTS Vendor Specific Setup Data Processing */
+struct eem_ip_info {
+	int peer_ip;
+	int ip;
+	int netmask;
+};
+struct eem_context {
+	struct eem_ip_info info;
+	struct work_struct eem_setup_wq;
+};
+static struct eem_context _eem_context;
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
+
 static inline struct f_eem *func_to_eem(struct usb_function *f)
 {
 	return container_of(f, struct f_eem, port.func);
@@ -56,7 +89,7 @@ static inline struct f_eem *func_to_eem(struct usb_function *f)
 
 /* interface descriptor: */
 
-static struct usb_interface_descriptor eem_intf __initdata = {
+static struct usb_interface_descriptor eem_intf = {
 	.bLength =		sizeof eem_intf,
 	.bDescriptorType =	USB_DT_INTERFACE,
 
@@ -70,7 +103,7 @@ static struct usb_interface_descriptor eem_intf __initdata = {
 
 /* full speed support: */
 
-static struct usb_endpoint_descriptor eem_fs_in_desc __initdata = {
+static struct usb_endpoint_descriptor eem_fs_in_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
@@ -78,7 +111,7 @@ static struct usb_endpoint_descriptor eem_fs_in_desc __initdata = {
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
 };
 
-static struct usb_endpoint_descriptor eem_fs_out_desc __initdata = {
+static struct usb_endpoint_descriptor eem_fs_out_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
@@ -86,7 +119,7 @@ static struct usb_endpoint_descriptor eem_fs_out_desc __initdata = {
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
 };
 
-static struct usb_descriptor_header *eem_fs_function[] __initdata = {
+static struct usb_descriptor_header *eem_fs_function[] = {
 	/* CDC EEM control descriptors */
 	(struct usb_descriptor_header *) &eem_intf,
 	(struct usb_descriptor_header *) &eem_fs_in_desc,
@@ -96,7 +129,7 @@ static struct usb_descriptor_header *eem_fs_function[] __initdata = {
 
 /* high speed support: */
 
-static struct usb_endpoint_descriptor eem_hs_in_desc __initdata = {
+static struct usb_endpoint_descriptor eem_hs_in_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
@@ -105,7 +138,7 @@ static struct usb_endpoint_descriptor eem_hs_in_desc __initdata = {
 	.wMaxPacketSize =	cpu_to_le16(512),
 };
 
-static struct usb_endpoint_descriptor eem_hs_out_desc __initdata = {
+static struct usb_endpoint_descriptor eem_hs_out_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
@@ -114,7 +147,7 @@ static struct usb_endpoint_descriptor eem_hs_out_desc __initdata = {
 	.wMaxPacketSize =	cpu_to_le16(512),
 };
 
-static struct usb_descriptor_header *eem_hs_function[] __initdata = {
+static struct usb_descriptor_header *eem_hs_function[] = {
 	/* CDC EEM control descriptors */
 	(struct usb_descriptor_header *) &eem_intf,
 	(struct usb_descriptor_header *) &eem_hs_in_desc,
@@ -141,6 +174,39 @@ static struct usb_gadget_strings *eem_strings[] = {
 
 /*-------------------------------------------------------------------------*/
 
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+static void eem_ip_info_clear(void)
+{
+	_eem_context.info.peer_ip = 0;
+	_eem_context.info.ip = 0;
+	_eem_context.info.netmask = 0;
+}
+
+static void eem_setup_data_process(struct work_struct *work)
+{
+	printk("PC IP      = 0x%X\n", _eem_context.info.peer_ip);
+	printk("Handset IP = 0x%X\n", _eem_context.info.ip);
+	printk("Netmask    = 0x%X\n", _eem_context.info.netmask);
+}
+
+static void eem_setup_data_complete(struct usb_ep *ep, struct usb_request *req)
+{
+	struct eem_ip_info info;
+
+	/* If EEM IP info data is in req->buf */
+	if( req->actual == sizeof(struct eem_ip_info) )
+	{
+		memcpy((void*)&info, req->buf, sizeof(struct eem_ip_info));
+		_eem_context.info.peer_ip = info.peer_ip;
+		_eem_context.info.ip = info.ip;
+		_eem_context.info.netmask = info.netmask;
+
+		/* Do post job */
+		schedule_work(&_eem_context.eem_setup_wq);
+	}
+}
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
+
 static int eem_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 {
 	struct usb_composite_dev *cdev = f->config->cdev;
@@ -149,9 +215,33 @@ static int eem_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	u16			w_value = le16_to_cpu(ctrl->wValue);
 	u16			w_length = le16_to_cpu(ctrl->wLength);
 
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+	struct usb_request	*req = cdev->req;
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
+
 	DBG(cdev, "invalid control req%02x.%02x v%04x i%04x l%d\n",
 		ctrl->bRequestType, ctrl->bRequest,
 		w_value, w_index, w_length);
+
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+	/* If valid data length is specified */
+	if( w_length == sizeof(struct eem_ip_info) )
+	{
+		/* Read data later */
+		req->complete = eem_setup_data_complete;
+		value = w_length;
+	}
+
+	/* respond with data transfer or status phase? */
+	if(value >= 0)
+	{
+		req->zero = 0;
+		req->length = value;
+		value = usb_ep_queue(cdev->gadget->ep0, req, GFP_ATOMIC);
+		if (value < 0)
+			printk(KERN_INFO "eem setup response error\n");
+	}
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
 
 	/* device either stalls (value < 0) or reports success */
 	return value;
@@ -207,6 +297,10 @@ static void eem_disable(struct usb_function *f)
 
 	DBG(cdev, "eem deactivated\n");
 
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+	eem_ip_info_clear();
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
+
 	if (eem->port.in_ep->driver_data)
 		gether_disconnect(&eem->port);
 }
@@ -215,7 +309,7 @@ static void eem_disable(struct usb_function *f)
 
 /* EEM function driver setup/binding */
 
-static int __init
+static int 
 eem_bind(struct usb_configuration *c, struct usb_function *f)
 {
 	struct usb_composite_dev *cdev = c->cdev;
@@ -309,6 +403,10 @@ eem_unbind(struct usb_configuration *c, struct usb_function *f)
 		usb_free_descriptors(f->hs_descriptors);
 	usb_free_descriptors(f->descriptors);
 	kfree(eem);
+
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+	eem_ip_info_clear();
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
 }
 
 static void eem_cmd_complete(struct usb_ep *ep, struct usb_request *req)
@@ -358,7 +456,7 @@ done:
 	 * b15:		bmType (0 == data)
 	 */
 	len = skb->len;
-	put_unaligned_le16((len & 0x3FFF) | BIT(14), skb_push(skb, 2));
+	put_unaligned_le16(len & 0x3FFF, skb_push(skb, 2));
 
 	/* add a zero-length EEM packet, if needed */
 	if (padlen)
@@ -464,13 +562,11 @@ static int eem_unwrap(struct gether *port,
 			}
 
 			/* validate CRC */
-			crc = get_unaligned_le32(skb->data + len - ETH_FCS_LEN);
 			if (header & BIT(14)) {
 				crc = get_unaligned_le32(skb->data + len
 							- ETH_FCS_LEN);
 				crc2 = ~crc32_le(~0,
-						skb->data,
-						skb->len - ETH_FCS_LEN);
+						skb->data, len - ETH_FCS_LEN);
 			} else {
 				crc = get_unaligned_be32(skb->data + len
 							- ETH_FCS_LEN);
@@ -519,7 +615,7 @@ error:
  * Caller must have called @gether_setup().  Caller is also responsible
  * for calling @gether_cleanup() before module unload.
  */
-int __init eem_bind_config(struct usb_configuration *c)
+int eem_bind_config(struct usb_configuration *c)
 {
 	struct f_eem	*eem;
 	int		status;
@@ -539,6 +635,10 @@ int __init eem_bind_config(struct usb_configuration *c)
 	eem = kzalloc(sizeof *eem, GFP_KERNEL);
 	if (!eem)
 		return -ENOMEM;
+
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+	INIT_WORK(&_eem_context.eem_setup_wq, eem_setup_data_process);
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
 
 	eem->port.cdc_filter = DEFAULT_FILTER;
 

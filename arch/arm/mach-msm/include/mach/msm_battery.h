@@ -40,6 +40,44 @@ struct msm_psy_batt_pdata {
 	u32 avail_chg_sources;
 	u32 batt_technology;
 	u32 (*calculate_capacity)(u32 voltage);
+#ifdef CONFIG_MACH_QSD8X50_S1
+	void (*config_gpio)(void);
+#endif
 };
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+#define GET_VBATT_TABLE_SIZE()    ((u32)(VBATT_TABLE_SIZE))
+
+typedef enum
+{
+    BATT_00_PERCENT  = 0,
+    BATT_05_PERCENT  = 5,
+    BATT_10_PERCENT  = 10,
+    BATT_15_PERCENT  = 15,
+    BATT_20_PERCENT  = 20,
+    BATT_25_PERCENT  = 25,
+    BATT_30_PERCENT  = 30,
+    BATT_35_PERCENT  = 35,
+    BATT_40_PERCENT  = 40,
+    BATT_45_PERCENT  = 45,
+    BATT_50_PERCENT  = 50,
+    BATT_55_PERCENT  = 55,
+    BATT_60_PERCENT  = 60,
+    BATT_65_PERCENT  = 65,
+    BATT_70_PERCENT  = 70,
+    BATT_75_PERCENT  = 75,
+    BATT_80_PERCENT  = 80,
+    BATT_85_PERCENT  = 85,
+    BATT_90_PERCENT  = 90,
+    BATT_95_PERCENT  = 95,
+    BATT_100_PERCENT = 100,
+    VBATT_TABLE_SIZE = 21
+} vbatt_capacity_type ;
+
+typedef struct 
+{
+    vbatt_capacity_type vbatt_capacity_percentage;
+    u32                 vbatt_translation_voltage;
+} vbatt_capacity_table_type ;
+#endif /* CONFIG_MACH_QSD8X50_S1 */
 #endif

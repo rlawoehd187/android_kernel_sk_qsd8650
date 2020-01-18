@@ -1115,6 +1115,9 @@ static int mdp_suspend(struct platform_device *pdev, pm_message_t state)
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void mdp_early_suspend(struct early_suspend *h)
 {
+#ifdef CONFIG_MACH_QSD8X50_S1
+	printk(KERN_INFO "%s\n", __func__);
+#endif
 	mdp_suspend_sub();
 }
 #endif

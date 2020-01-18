@@ -100,7 +100,11 @@ static int smd_tty_open(struct tty_struct *tty, struct file *f)
 	else if (n == 7)
 		name = "DATA1";
 	else if (n == 21)
+#ifdef CONFIG_MACH_QSD8X50_S1
+		name = "DATA11"; /* It seems to be a bug of Q */
+#else
 		name = "DATA21";
+#endif
 	else if (n == 27)
 		name = "GPSNMEA";
 	else if (n == 36)

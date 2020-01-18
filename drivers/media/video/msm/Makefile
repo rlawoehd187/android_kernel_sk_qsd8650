@@ -20,3 +20,8 @@ obj-$(CONFIG_VX6953) += vx6953.o vx6953_reg.o
 obj-$(CONFIG_VB6801) += vb6801.o
 obj-$(CONFIG_IMX074) += imx074.o imx074_reg.o
 obj-$(CONFIG_MSM_GEMINI) += msm_gemini_dev.o msm_gemini_sync.o msm_gemini_core.o msm_gemini_hw.o msm_gemini_platform.o
+
+# FEATURE_SKTS_CAM_SENSOR_ADD
+obj-$(CONFIG_ISX006) += isx006.o isx006_reg.o
+obj-$(CONFIG_MT9V113) += mt9v113.o mt9v113_reg.o
+obj-$(CONFIG_SKTS_CAM_KERNEL_COMMON) += camsensor_tune.o

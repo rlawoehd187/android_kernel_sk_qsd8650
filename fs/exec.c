@@ -72,6 +72,10 @@ int suid_dumpable = 0;
 static LIST_HEAD(formats);
 static DEFINE_RWLOCK(binfmt_lock);
 
+#ifdef CONFIG_FB_MSM_BOOTING_BAR
+extern int load_booting_progress(int width);
+#endif
+
 int __register_binfmt(struct linux_binfmt * fmt, int insert)
 {
 	if (!fmt)
@@ -1315,10 +1319,21 @@ int do_execve(char * filename,
 	struct files_struct *displaced;
 	bool clear_in_exec;
 	int retval;
+#ifdef CONFIG_FB_MSM_BOOTING_BAR	
+	static int cnt = 0;
+#endif	
 
 	retval = unshare_files(&displaced);
 	if (retval)
 		goto out_ret;
+
+#ifdef CONFIG_FB_MSM_BOOTING_BAR
+	if(cnt < 24){
+		load_booting_progress(6);
+		//printk(KERN_INFO "loading bar %d\n", cnt);
+		cnt++;
+	}
+#endif
 
 	retval = -ENOMEM;
 	bprm = kzalloc(sizeof(*bprm), GFP_KERNEL);

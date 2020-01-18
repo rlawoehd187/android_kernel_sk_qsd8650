@@ -596,4 +596,25 @@ config TOUCHSCREEN_CY8C_TS
 	  To compile this driver as a module, choose M here: the
 	  module will be called cy8c_ts.
 
+config TOUCHSCREEN_CYPRESS_TMG200
+	default n
+	tristate "CYPRESS TMG200 Touchscreen controller"
+	depends on ARCH_MSM
+	help
+	  Say Y here if you have a touchscreen interface using 
+	  Cypress touchscreen controller.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called msm_touch.
+
+config TOUCHSCREEN_CYPRESS_TMA340
+	default n
+	tristate "CYPRESS TMA340 Touchscreen controller"
+	depends on ARCH_MSM
+	help
+	  Say Y here if you have a touchscreen interface using 
+	  Cypress touchscreen controller.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called msm_touch.
 endif

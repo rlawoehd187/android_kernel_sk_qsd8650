@@ -391,7 +391,25 @@ struct msm_snapshot_pp_status {
 #define CFG_GET_AF_MAX_STEPS		26
 #define CFG_GET_PICT_MAX_EXP_LC		27
 #define CFG_SEND_WB_INFO    28
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON) // FEATURE_SKTS_CAM_PARM
+#define CFG_SET_ISO_MODE            29
+#define CFG_SET_SCENE_MODE          30
+#define CFG_SET_AF_MODE             31
+#define CFG_SET_AUTO_FOCUS          32
+#define CFG_SET_AUTO_FOCUS_POSITION 33
+#define CFG_SET_AUTO_FOCUS_POLLING  34
+#define CFG_GET_AUTO_FOCUS_RESULT   35
+#define CFG_SET_AF_CANCEL           36
+#define CFG_SET_REFLECT             37
+#define CFG_SET_JPEG_QUALITY        38
+#define CFG_SET_720P_MODE           39  // FEATURE_SKTS_CAM_720P_RECORDING
+#define CFG_SET_VT_TUNE             40
+#define CFG_SET_ESD_RECOVER         41
+#define CFG_GET_ESD_RECOVER_STATE   42
+#define CFG_MAX 43
+#else
 #define CFG_MAX 			29
+#endif
 
 #define MOVE_NEAR	0
 #define MOVE_FAR	1
@@ -440,6 +458,34 @@ struct wb_info_cfg {
 	uint16_t green_gain;
 	uint16_t blue_gain;
 };
+
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON) // FEATURE_SKTS_CAM_JPEG_CAPTURE
+struct jpeg_capture_cfg {
+	uint16_t jpeg_capture_width;
+	uint16_t jpeg_capture_height;
+	uint16_t jpeg_capture_yuv_tn_width;
+	uint16_t jpeg_capture_yuv_tn_height;
+};
+#endif
+
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON) // FEATURE_SKTS_CAM_PARM_AUTO_FOCUS
+struct af_cfg {
+    int8_t  af_mode;
+    int16_t af_pos_x;
+    int16_t af_pos_y;
+    int16_t preview_dx;
+    int16_t preview_dy;
+};
+#endif
+
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON) // FEATURE_SKTS_CAM_SENSOR_ZOOM
+struct ZoomInfoType {
+	int32_t zoom_value;
+	int32_t picture_dx;
+	int32_t picture_dy;
+};
+#endif
+
 struct sensor_cfg_data {
 	int cfgtype;
 	int mode;
@@ -460,6 +506,27 @@ struct sensor_cfg_data {
 		struct focus_cfg focus;
 		struct fps_cfg fps;
 		struct wb_info_cfg wb_info;
+
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON) // FEATURE_SKTS_CAM_PARM
+		int8_t wb;
+		int8_t brightness;
+		int8_t exposure;
+		int8_t iso;
+		int8_t scene_mode;
+		int8_t reflect;
+		int8_t fixed_fps;
+        int8_t jpeg_quality;    // FEATURE_SKTS_CAM_PARM_JPEG_QUALITY
+        int32_t vout_size;      // FEATURE_SKTS_CAM_720P_RECORDING
+#endif
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON) // FEATURE_SKTS_CAM_PARM_AUTO_FOCUS
+		struct af_cfg af_info;
+#endif
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON)  // FEATURE_SKTS_CAM_JPEG_CAPTURE
+		struct jpeg_capture_cfg jpeg_capture_info;
+#endif
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON)  // FEATURE_SKTS_CAM_SENSOR_ZOOM
+		struct ZoomInfoType ZoomInfo;
+#endif
 	} cfg;
 };
 

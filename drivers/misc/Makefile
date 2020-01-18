@@ -39,3 +39,7 @@ obj-$(CONFIG_HAPTIC_ISA1200)		+= isa1200.o
 obj-$(CONFIG_PMIC8058_PWM) += pmic8058-pwm.o
 obj-$(CONFIG_PMIC8058_VIBRATOR) += pmic8058-vibrator.o
 obj-$(CONFIG_PMIC8058_NFC) += pmic8058-nfc.o
+obj-$(CONFIG_APDS_9180)		+= apds9180.o
+obj-$(CONFIG_YAMAHA_YDA158)	+= yda158.o
+obj-$(CONFIG_LTR_505ALS)   += ltr_505als.o
+obj-$(CONFIG_AMS_0303)   += ams0303.o

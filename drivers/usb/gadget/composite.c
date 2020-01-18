@@ -27,6 +27,8 @@
 
 #include <linux/usb/composite.h>
 
+/* Null iSerialNumber setting of USB device descriptor. 2010-09-14 ykjeon@sk-w.com */
+//#define SET_NULL_SERIALNUMBER
 
 /*
  * The code in this file is utility code, used to build a gadget driver
@@ -710,6 +712,9 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
 			value = min(w_length, (u16) sizeof cdev->desc);
+#ifdef SET_NULL_SERIALNUMBER
+			cdev->desc = 0x00;
+#endif /* SET_NULL_SERIALNUMBER */
 			memcpy(req->buf, &cdev->desc, value);
 			break;
 		case USB_DT_DEVICE_QUALIFIER:
@@ -812,8 +817,14 @@ unknown:
 				== USB_RECIP_INTERFACE) {
 			struct usb_configuration	*config;
 			config = cdev->config;
+
+			/* For handling of invalid USB device request. ykjeon@sk-w.com 2010-09-09 */
+			if(config == NULL)
+				goto done;
+
 			if (w_index >= config->next_interface_id)
 				goto done;
+
 			f = cdev->config->interface[intf];
 			if (f && f->setup)
 				value = f->setup(f, ctrl);

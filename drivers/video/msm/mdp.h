@@ -290,7 +290,9 @@ struct mdp_dma_data {
 #define MDP_SYNCFG_HGT_LOC 21
 #define MDP_SYNCFG_VSYNC_EXT_EN BIT(20)
 #define MDP_SYNCFG_VSYNC_INT_EN BIT(19)
+#ifndef CONFIG_MACH_QSD8X50_S1	//S1 does not use MDP_VSYNC
 #define MDP_HW_VSYNC
+#endif//CONFIG_MACH_QSD8X50_S1
 #endif
 
 /*

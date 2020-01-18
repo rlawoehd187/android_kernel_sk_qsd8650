@@ -84,6 +84,30 @@
 #define AUDIO_SET_NS         _IOW(AUDIO_IOCTL_MAGIC, 91, unsigned)
 #define AUDIO_SET_TX_IIR     _IOW(AUDIO_IOCTL_MAGIC, 92, unsigned)
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+struct s1_tune_acdb_info
+{
+	uint32_t    index;
+	uint32_t    device_id;
+	uint32_t    sample_rate;
+	uint32_t    dwRealLen;
+	uint8_t     aucBuf[4096];
+};
+
+#define AUDIO_GET_ACDB_INFO   _IOWR(AUDIO_IOCTL_MAGIC, 93, \
+                struct s1_tune_acdb_info)
+
+#define AUDIO_SET_ACDB_INFO   _IOW(AUDIO_IOCTL_MAGIC, 94, \
+                struct s1_tune_acdb_info)
+
+#define AUDIO_SET_RX_MUTE     _IOW(AUDIO_IOCTL_MAGIC, 95, unsigned)
+
+#define AUDIO_GET_RX_MUTE     _IOR(AUDIO_IOCTL_MAGIC, 96, unsigned)
+
+#define AUDIO_GET_TX_MUTE     _IOR(AUDIO_IOCTL_MAGIC, 97, unsigned)
+#endif
+
+
 #define	AUDIO_MAX_COMMON_IOCTL_NUM	100
 
 

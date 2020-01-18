@@ -55,11 +55,24 @@ EXPORT_SYMBOL(panic_blink);
  *
  *	This function never returns.
  */
+
+ #ifdef CONFIG_PANIC_LOG_SAVE
+extern int panic_write_log(void);
+#endif
+
 NORET_TYPE void panic(const char * fmt, ...)
 {
 	static char buf[1024];
 	va_list args;
 	long i;
+
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug( "Kernel panic - not syncing\n");
+#endif
+
+#ifdef CONFIG_PANIC_LOG_SAVE
+	panic_write_log();
+#endif
 
 	/*
 	 * It's possible to come here directly from a panic-assertion and
@@ -73,6 +86,10 @@ NORET_TYPE void panic(const char * fmt, ...)
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
 	printk(KERN_EMERG "Kernel panic - not syncing: %s\n",buf);
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug( "Kernel panic - not syncing: %s\n",buf);
+#endif
+
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 	dump_stack();
 #endif

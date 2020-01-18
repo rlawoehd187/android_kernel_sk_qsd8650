@@ -22,6 +22,10 @@
 #include <mach/rpc_hsusb.h>
 #include <asm/mach-types.h>
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+extern void msm_batt_usb_charger_connected(bool connected);
+#endif
+
 static struct msm_rpc_endpoint *usb_ep;
 static struct msm_rpc_endpoint *chg_ep;
 
@@ -158,8 +162,8 @@ int msm_chg_rpc_connect(void)
 	uint32_t chg_vers;
 
 	if (machine_is_msm7201a_surf() || machine_is_msm7x27_surf() ||
-	    machine_is_qsd8x50_surf() || machine_is_msm7x25_surf() ||
-	    machine_is_qsd8x50a_surf())
+	    machine_is_qsd8x50_surf()  || machine_is_msm7x25_surf() ||
+	    machine_is_qsd8x50a_surf() || machine_is_qsd8x50_s1() )
 		return -ENOTSUPP;
 
 	if (chg_ep && !IS_ERR(chg_ep)) {
@@ -601,12 +605,18 @@ void hsusb_chg_connected(enum chg_type chgtype)
 	if (chgtype == USB_CHG_TYPE__INVALID) {
 		msm_chg_usb_i_is_not_available();
 		msm_chg_usb_charger_disconnected();
+#ifdef CONFIG_MACH_QSD8X50_S1
+		msm_batt_usb_charger_connected(false);
+#endif
 		return;
 	}
 
 	pr_info("\nCharger Type: %s\n", chg_types[chgtype]);
 
 	msm_chg_usb_charger_connected(chgtype);
+#ifdef CONFIG_MACH_QSD8X50_S1
+	msm_batt_usb_charger_connected(true);
+#endif
 }
 EXPORT_SYMBOL(hsusb_chg_connected);
 #endif

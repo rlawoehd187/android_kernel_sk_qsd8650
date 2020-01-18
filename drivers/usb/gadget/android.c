@@ -15,6 +15,13 @@
  * GNU General Public License for more details.
  *
  */
+/*******************************************************************************
+ * Modified by ykjeon@sk-w.com for S1 handset of SK telesys
+ *
+ * 1) USB CDC EEM function is added.
+ * 2) Device class is modified. (USE_SKTS_S1_USB_DEVICE_CLASS)
+ *
+ ******************************************************************************/
 
 /* #define DEBUG */
 /* #define VERBOSE_DEBUG */
@@ -34,7 +41,7 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/composite.h>
 #include <linux/usb/gadget.h>
-#if defined(CONFIG_USB_ANDROID_CDC_ECM) || defined(CONFIG_USB_ANDROID_RNDIS)
+#if defined(CONFIG_USB_ANDROID_CDC_ECM) || defined(CONFIG_USB_ANDROID_RNDIS) || defined(CONFIG_USB_ANDROID_EEM)
 #include "u_ether.h"
 #endif
 
@@ -50,6 +57,12 @@
 
 #include "gadget_chips.h"
 
+/* SKTS S1 USB Device class enable flag. (2010-04-12 ykjeon@sk-w.com) */
+#define USE_SKTS_S1_USB_DEVICE_CLASS
+
+/* USB remote wakeup bit setting flag. ykjeon@sk-w.com 2010-09-07 */
+//#define USE_USB_CONFIG_ATT_REMOTE_WAKEUP
+
 /*
  * Kbuild is not very cooperative with respect to linking separately
  * compiled library objects into one module.  So for now we won't use
@@ -61,6 +74,10 @@
 #include "config.c"
 #include "epautoconf.c"
 #include "composite.c"
+
+#ifdef CONFIG_USB_ANDROID_EEM /* ykjeon@sk-w.com */
+#include "f_eem.c"
+#endif
 
 MODULE_AUTHOR("Mike Lockwood");
 MODULE_DESCRIPTION("Android Composite USB Driver");
@@ -88,7 +105,7 @@ module_param_call(serial_number, android_set_sn, param_get_string,
 MODULE_PARM_DESC(serial_number, "SerialNumber string");
 
 static const char longname[] = "Gadget Android";
-#if defined(CONFIG_USB_ANDROID_CDC_ECM) || defined(CONFIG_USB_ANDROID_RNDIS)
+#if defined(CONFIG_USB_ANDROID_CDC_ECM) || defined(CONFIG_USB_ANDROID_RNDIS) || defined(CONFIG_USB_ANDROID_EEM)
 static u8 hostaddr[ETH_ALEN];
 #endif
 
@@ -172,6 +189,9 @@ android_func_attr(nmea, ANDROID_GENERIC_NMEA);
 android_func_attr(cdc_ecm, ANDROID_CDC_ECM);
 android_func_attr(rmnet, ANDROID_RMNET);
 android_func_attr(rndis, ANDROID_RNDIS);
+#ifdef CONFIG_USB_ANDROID_EEM
+android_func_attr(eem, ANDROID_EEM);
+#endif
 
 static struct attribute *android_func_attrs[] = {
 	&dev_attr_adb.attr,
@@ -184,6 +204,9 @@ static struct attribute *android_func_attrs[] = {
 	&dev_attr_cdc_ecm.attr,
 	&dev_attr_rmnet.attr,
 	&dev_attr_rndis.attr,
+#ifdef CONFIG_USB_ANDROID_EEM
+	&dev_attr_eem.attr,
+#endif
 	NULL,
 };
 
@@ -191,6 +214,40 @@ static struct attribute_group android_func_attr_grp = {
 	.name  = "functions",
 	.attrs = android_func_attrs,
 };
+
+/* EEM PC IP address, Handset IP address, Netmask *//* 2010-05-06 ykjeon@sk-w.com */
+#ifdef CONFIG_USB_ANDROID_EEM
+
+#define android_network_attr(name)				\
+static ssize_t  show_##name(struct device *dev,			\
+		struct device_attribute *attr, char *buf)		\
+{									\
+									\
+	unsigned long n = _eem_context.info.name;			\
+	unsigned char *p = (unsigned char *)&n;			\
+									\
+	return sprintf(buf, "%d.%d.%d.%d", p[0], p[1], p[2], p[3]);		\
+									\
+}									\
+									\
+static DEVICE_ATTR(name, S_IRUGO, show_##name, NULL);
+
+android_network_attr(peer_ip);
+android_network_attr(ip);
+android_network_attr(netmask);
+
+static struct attribute *android_network_attrs[] = {
+	&dev_attr_peer_ip.attr,
+	&dev_attr_ip.attr,
+	&dev_attr_netmask.attr,
+	NULL,
+};
+
+static struct attribute_group android_network_attr_grp = {
+	.name  = "network",
+	.attrs = android_network_attrs,
+};
+#endif /* CONFIG_USB_ANDROID_EEM */
 
 static int  android_bind_config(struct usb_configuration *c)
 {
@@ -264,6 +321,15 @@ static int  android_bind_config(struct usb_configuration *c)
 				return ret;
 			break;
 #endif
+#ifdef CONFIG_USB_ANDROID_EEM /* ykjeon */
+		case ANDROID_EEM:
+			ret = eem_bind_config(c);
+			if (ret) {
+				printk(KERN_ERR "failed to add EEM function\n");
+				return ret;
+			}
+			break;
+#endif
 		default:
 			ret = -EINVAL;
 			return ret;
@@ -314,12 +380,77 @@ static int is_iad_enabled(void)
 	return 0;
 }
 
+#ifdef CONFIG_USB_ANDROID_RNDIS
+static int is_rndis_enabled(void)
+{
+	struct android_dev *dev = _android_dev;
+	unsigned long n = dev->functions;
+
+	while (n) {
+		switch (n & 0x0F) {
+		case ANDROID_RNDIS:
+			return 1;
+		}
+		n = n >> 4;
+	}
+
+	return 0;
+}
+
+static int is_adb_enabled(void)
+{
+	struct android_dev *dev = _android_dev;
+	unsigned long n = dev->functions;
+
+	while (n) {
+		switch (n & 0x0F) {
+		case ANDROID_ADB:
+			return 1;
+		}
+		n = n >> 4;
+	}
+
+	return 0;
+}
+#endif
+
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+static int android_setup_config(struct usb_configuration *c,
+				const struct usb_ctrlrequest *ctrl);
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
+
 static struct usb_configuration android_config_driver = {
 	.label		= "android",
 	.bind		= android_bind_config,
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+	.setup		= android_setup_config,
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
 	.bConfigurationValue = 1,
 	.bMaxPower	= 0xFA, /* 500ma */
 };
+
+#ifdef SKTS_EEM_SETUP_DATA_PROCESS
+static int android_setup_config(struct usb_configuration *c,
+				const struct usb_ctrlrequest *ctrl)
+{
+	int i;
+	int ret = -EOPNOTSUPP;
+
+	for(i=0; i<android_config_driver.next_interface_id; i++)
+	{
+		if (android_config_driver.interface[i]->setup)
+		{
+			ret = android_config_driver.interface[i]->setup(android_config_driver.interface[i], ctrl);
+			if (0 <= ret)
+			{
+				return ret;
+			}
+		}
+	}
+
+	return ret;
+}
+#endif /* SKTS_EEM_SETUP_DATA_PROCESS */
 
 static int android_unbind(struct usb_composite_dev *cdev)
 {
@@ -362,12 +493,14 @@ static int  android_bind(struct usb_composite_dev *cdev)
 	device_desc.iSerialNumber = id;
 
 	device_desc.idProduct = __constant_cpu_to_le16(product_id);
+#ifdef USE_USB_CONFIG_ATT_REMOTE_WAKEUP /* ykjeon@sk-w.com 2010-09-07 */
 	/* Supporting remote wakeup for mass storage only function
 	 * does n't make sense, since there are no notifications that
 	 * can be sent from mass storage during suspend */
 	if ((gadget->ops->wakeup) && (dev->functions != ANDROID_MSC))
 		android_config_driver.bmAttributes |= USB_CONFIG_ATT_WAKEUP;
 	else
+#endif
 		android_config_driver.bmAttributes &= ~USB_CONFIG_ATT_WAKEUP;
 
 	if (dev->pdata->self_powered && !usb_gadget_set_selfpowered(gadget)) {
@@ -391,7 +524,7 @@ static int  android_bind(struct usb_composite_dev *cdev)
 	 * for every composition switch. It is setup one time and teared down
 	 * during module removal.
 	 */
-#if defined(CONFIG_USB_ANDROID_CDC_ECM) || defined(CONFIG_USB_ANDROID_RNDIS)
+#if defined(CONFIG_USB_ANDROID_CDC_ECM) || defined(CONFIG_USB_ANDROID_RNDIS) || defined(CONFIG_USB_ANDROID_EEM)
 	/* set up network link layer */
 	ret = gether_setup(cdev->gadget, hostaddr);
 	if (ret && (ret != -EBUSY)) {
@@ -423,6 +556,29 @@ static int  android_bind(struct usb_composite_dev *cdev)
 		device_desc.bcdDevice = __constant_cpu_to_le16(0x9999);
 	}
 
+#ifdef USE_SKTS_S1_USB_DEVICE_CLASS
+#ifdef CONFIG_USB_ANDROID_RNDIS /* ykjeon@sk-w.com 2010-08-27 */
+	if(is_rndis_enabled()) {
+		if (is_adb_enabled()) {
+			device_desc.bDeviceClass         = USB_CLASS_MISC;
+			device_desc.bDeviceSubClass      = 0x02;
+			device_desc.bDeviceProtocol      = 0x01;
+		}
+		else
+		{
+			device_desc.bDeviceClass         = USB_CLASS_WIRELESS_CONTROLLER;
+			device_desc.bDeviceSubClass      = 0;
+			device_desc.bDeviceProtocol      = 0;
+		}
+	}
+	else 
+#endif /* CONFIG_USB_ANDROID_RNDIS */
+	{
+		device_desc.bDeviceClass         = USB_CLASS_COMM;
+		device_desc.bDeviceSubClass      = 0;
+		device_desc.bDeviceProtocol      = 0;
+	}
+#else
 	if (is_iad_enabled()) {
 		device_desc.bDeviceClass         = USB_CLASS_MISC;
 		device_desc.bDeviceSubClass      = 0x02;
@@ -432,6 +588,7 @@ static int  android_bind(struct usb_composite_dev *cdev)
 		device_desc.bDeviceSubClass      = 0;
 		device_desc.bDeviceProtocol      = 0;
 	}
+#endif
 	pr_debug("android_bind done\n");
 	return 0;
 }
@@ -629,6 +786,7 @@ static int __init android_probe(struct platform_device *pdev)
 		return -ENODEV;
 
 	device_desc.idVendor =	__constant_cpu_to_le16(pdata->vendor_id);
+	printk("android_probe: USB Vendor ID is 0x%04X\n", pdata->vendor_id);
 	dev->version = pdata->version;
 	strings_dev[STRING_PRODUCT_IDX].s = pdata->product_name;
 	strings_dev[STRING_MANUFACTURER_IDX].s = pdata->manufacturer_name;
@@ -645,7 +803,18 @@ static int __init android_probe(struct platform_device *pdev)
 		pr_err("%s: Failed to create the functions sysfs entry \n",
 				__func__);
 		sysfs_remove_group(&pdev->dev.kobj, &android_attr_grp);
+		return ret; /* 2010-05-11 ykjeon@sk-w.com */
 	}
+
+#ifdef CONFIG_USB_ANDROID_EEM /* 2010-05-11 ykjeon@sk-w.com */
+	ret = sysfs_create_group(&pdev->dev.kobj, &android_network_attr_grp);
+	if (ret < 0) {
+		pr_err("%s: Failed to create the functions sysfs entry \n",
+				__func__);
+		sysfs_remove_group(&pdev->dev.kobj, &android_attr_grp);
+		sysfs_remove_group(&pdev->dev.kobj, &android_func_attr_grp);
+	}
+#endif /* CONFIG_USB_ANDROID_EEM */
 
 	return ret;
 }
@@ -725,7 +894,7 @@ module_init(init);
 
 static void __exit cleanup(void)
 {
-#if defined(CONFIG_USB_ANDROID_CDC_ECM) || defined(CONFIG_USB_ANDROID_RNDIS)
+#if defined(CONFIG_USB_ANDROID_CDC_ECM) || defined(CONFIG_USB_ANDROID_RNDIS) || defined(CONFIG_USB_ANDROID_EEM)
 	gether_cleanup();
 #endif
 

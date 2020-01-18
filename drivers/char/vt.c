@@ -599,6 +599,9 @@ static void hide_cursor(struct vc_data *vc)
 
 static void set_cursor(struct vc_data *vc)
 {
+#ifdef CONFIG_MACH_QSD8X50_S1
+	return;
+#else
 	if (!IS_FG(vc) || console_blanked ||
 	    vc->vc_mode == KD_GRAPHICS)
 		return;
@@ -610,6 +613,7 @@ static void set_cursor(struct vc_data *vc)
 			vc->vc_sw->con_cursor(vc, CM_DRAW);
 	} else
 		hide_cursor(vc);
+#endif	
 }
 
 static void set_origin(struct vc_data *vc)
@@ -3046,7 +3050,9 @@ static int bind_con_driver(const struct consw *csw, int first, int last,
 
 		if (k >= 0) {
 			vc = vc_cons[k].d;
+#ifndef CONFIG_MACH_QSD8X50_S1			
 			update_screen(vc);
+#endif
 		}
 	} else
 		printk("to %s\n", desc);

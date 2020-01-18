@@ -1,0 +1,17 @@
+# drivers/mtd/panic_log/Kconfig
+
+menu "Low level nand devices for saved Panic Log"
+	depends on MTD!=n
+
+config PANIC_LOG_SAVE
+	bool "Save the Panic log"
+	depends on PRINTK
+	help
+	  this feature to read/write nand page to be saved panic log ,
+config PANIC_DISP_LOG
+	bool "Display the Panic log"
+	depends on PRINTK && PANIC_LOG_SAVE
+	help
+	  Display the panic log	  
+endmenu
+

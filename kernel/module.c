@@ -3095,14 +3095,27 @@ void print_modules(void)
 	char buf[8];
 
 	printk(KERN_DEFAULT "Modules linked in:");
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("Modules linked in:");
+#endif
 	/* Most callers should already have preempt disabled, but make sure */
 	preempt_disable();
 	list_for_each_entry_rcu(mod, &modules, list)
 		printk(" %s%s", mod->name, module_flags(mod, buf));
+#ifdef CONFIG_PANIC_DISP_LOG
+		dispdebug("%s%s", mod->name, module_flags(mod, buf));
+#endif
 	preempt_enable();
 	if (last_unloaded_module[0])
 		printk(" [last unloaded: %s]", last_unloaded_module);
 	printk("\n");
+
+#ifdef CONFIG_PANIC_DISP_LOG
+	if (last_unloaded_module[0])
+		dispdebug(" [last unloaded: %s]", last_unloaded_module);
+	dispdebug("\n");
+#endif
+	
 }
 
 #ifdef CONFIG_MODVERSIONS

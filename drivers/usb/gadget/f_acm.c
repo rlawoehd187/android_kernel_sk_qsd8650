@@ -19,6 +19,8 @@
 #include "u_serial.h"
 #include "gadget_chips.h"
 
+/* Feature for monitoring flow control. ykjeon@sk-w.com 2010-08-06 */
+//#define MONITOR_FLOW_CONTROL
 
 /*
  * This CDC ACM function support just wraps control functions and
@@ -357,6 +359,11 @@ static int acm_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 		 * that bit, we should return to that no-flow state.
 		 */
 		acm->port_handshake_bits = w_value;
+#ifdef MONITOR_FLOW_CONTROL /* ykjeon@sk-w.com 2010-08-06 */
+		printk("[PC->PHONE]: (0x%02X) RTS[%d] DTR[%d]\n", w_value,
+					(w_value&0x0002) >> 1,
+					(w_value&0x0001));
+#endif /* MONITOR_FLOW_CONTROL */
 		break;
 
 	default:
@@ -504,6 +511,14 @@ static int acm_notify_serial_state(struct f_acm *acm)
 				acm->port_num, acm->serial_state);
 		status = acm_cdc_notify(acm, USB_CDC_NOTIFY_SERIAL_STATE,
 				0, &acm->serial_state, sizeof(acm->serial_state));
+#ifdef MONITOR_FLOW_CONTROL /* ykjeon@sk-w.com 2010-08-06 */
+		printk("[PC<-PHONE]: (0x%02X) RI[%d] BRK[%d] DSR[%d] DCD[%d]: %d\n", acm->serial_state,
+				(acm->serial_state & 0x0008) >> 3,
+				(acm->serial_state & 0x0004) >> 2,
+				(acm->serial_state & 0x0002) >> 1,
+				(acm->serial_state & 0x0001),
+				status);
+#endif /* MONITOR_FLOW_CONTROL */
 	} else {
 		acm->pending = true;
 		status = 0;

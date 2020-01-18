@@ -469,6 +469,53 @@ SYSCALL_DEFINE3(syslog, int, type, char __user *, buf, int, len)
 	return do_syslog(type, buf, len);
 }
 
+#ifdef CONFIG_PANIC_LOG_SAVE 
+int get_printk_log(char* buf, int len)
+{
+	unsigned i, j, limit, count;
+	char c;
+	int error = -EINVAL;
+
+	if (!buf || len < 0)
+		goto out;
+	error = 0;
+	if (!len)
+		goto out;
+
+	count = len;
+	if (count > log_buf_len)
+		count = log_buf_len;
+
+	spin_lock_irq(&logbuf_lock);
+	if (count > logged_chars)
+		count = logged_chars;
+
+	limit = log_end;
+
+	for (i = 0; i < count ; i++) {
+		j = limit-1-i;
+		if (j + log_buf_len < log_end)
+			break;
+		buf[count-1-i] = LOG_BUF(j);
+	}
+
+	error = i;
+	if (i != count) {
+		int offset = count-error;
+		/* buffer overflow during copy, correct user buffer. */
+		for (i = 0; i < error; i++) {
+			c = buf[i+offset];
+			buf[i] = c;
+		}
+	}
+	spin_unlock_irq(&logbuf_lock);
+
+out:
+	return error;
+}
+EXPORT_SYMBOL(get_printk_log);
+#endif /*CONFIG_PANIC_LOG_SAVE*/
+/*
 /*
  * Call the console drivers on a range of log_buf
  */

@@ -97,7 +97,6 @@ static void dump_mem(const char *lvl, const char *str, unsigned long bottom,
 	set_fs(KERNEL_DS);
 
 	printk("%s%s(0x%08lx to 0x%08lx)\n", lvl, str, bottom, top);
-
 	for (first = bottom & ~31; first < top; first += 32) {
 		unsigned long p;
 		char str[sizeof(" 12345678") * 8 + 1];
@@ -231,11 +230,19 @@ static void __die(const char *str, int err, struct thread_info *thread, struct p
 
 	printk(KERN_EMERG "Internal error: %s: %x [#%d]" S_PREEMPT S_SMP "\n",
 	       str, err, ++die_counter);
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("Internal error: %s: %x [#%d]" S_PREEMPT S_SMP "\n",
+	       str, err, ++die_counter);
+#endif	
 	sysfs_printk_last_file();
 	print_modules();
 	__show_regs(regs);
 	printk(KERN_EMERG "Process %.*s (pid: %d, stack limit = 0x%p)\n",
 		TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), thread + 1);
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("Process %.*s (pid: %d, stack limit = 0x%p)\n",
+		TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), thread + 1);
+#endif	
 
 	if (!user_mode(regs) || in_interrupt()) {
 		dump_mem(KERN_EMERG, "Stack: ", regs->ARM_sp,

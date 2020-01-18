@@ -299,21 +299,48 @@ void __show_regs(struct pt_regs *regs)
 		smp_processor_id(), print_tainted(), init_utsname()->release,
 		(int)strcspn(init_utsname()->version, " "),
 		init_utsname()->version);
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("CPU: %d    %s  (%s %.*s)\n",
+		smp_processor_id(), print_tainted(), init_utsname()->release,
+		(int)strcspn(init_utsname()->version, " "),
+		init_utsname()->version);
+#endif
 	print_symbol("PC is at %s\n", instruction_pointer(regs));
 	print_symbol("LR is at %s\n", regs->ARM_lr);
 	printk("pc : [<%08lx>]    lr : [<%08lx>]    psr: %08lx\n"
 	       "sp : %08lx  ip : %08lx  fp : %08lx\n",
 		regs->ARM_pc, regs->ARM_lr, regs->ARM_cpsr,
 		regs->ARM_sp, regs->ARM_ip, regs->ARM_fp);
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("pc : [<%08lx>]    lr : [<%08lx>]    psr: %08lx\n"
+	       "sp : %08lx  ip : %08lx  fp : %08lx\n",
+		regs->ARM_pc, regs->ARM_lr, regs->ARM_cpsr,
+		regs->ARM_sp, regs->ARM_ip, regs->ARM_fp);
+#endif
 	printk("r10: %08lx  r9 : %08lx  r8 : %08lx\n",
 		regs->ARM_r10, regs->ARM_r9,
 		regs->ARM_r8);
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("r10: %08lx  r9 : %08lx  r8 : %08lx\n",
+		regs->ARM_r10, regs->ARM_r9,
+		regs->ARM_r8);
+#endif
 	printk("r7 : %08lx  r6 : %08lx  r5 : %08lx  r4 : %08lx\n",
 		regs->ARM_r7, regs->ARM_r6,
 		regs->ARM_r5, regs->ARM_r4);
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("r7 : %08lx  r6 : %08lx  r5 : %08lx  r4 : %08lx\n",
+		regs->ARM_r7, regs->ARM_r6,
+		regs->ARM_r5, regs->ARM_r4);
+#endif
 	printk("r3 : %08lx  r2 : %08lx  r1 : %08lx  r0 : %08lx\n",
 		regs->ARM_r3, regs->ARM_r2,
 		regs->ARM_r1, regs->ARM_r0);
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("r3 : %08lx  r2 : %08lx  r1 : %08lx  r0 : %08lx\n",
+		regs->ARM_r3, regs->ARM_r2,
+		regs->ARM_r1, regs->ARM_r0);
+#endif
 
 	flags = regs->ARM_cpsr;
 	buf[0] = flags & PSR_N_BIT ? 'N' : 'n';
@@ -328,6 +355,14 @@ void __show_regs(struct pt_regs *regs)
 		processor_modes[processor_mode(regs)],
 		isa_modes[isa_mode(regs)],
 		get_fs() == get_ds() ? "kernel" : "user");
+#ifdef CONFIG_PANIC_DISP_LOG
+	dispdebug("Flags: %s  IRQs o%s  FIQs o%s  Mode %s  ISA %s  Segment %s\n",
+		buf, interrupts_enabled(regs) ? "n" : "ff",
+		fast_interrupts_enabled(regs) ? "n" : "ff",
+		processor_modes[processor_mode(regs)],
+		isa_modes[isa_mode(regs)],
+		get_fs() == get_ds() ? "kernel" : "user");
+#endif
 #ifdef CONFIG_CPU_CP15
 	{
 		unsigned int ctrl;
@@ -346,6 +381,9 @@ void __show_regs(struct pt_regs *regs)
 		asm("mrc p15, 0, %0, c1, c0\n" : "=r" (ctrl));
 
 		printk("Control: %08x%s\n", ctrl, buf);
+#ifdef CONFIG_PANIC_DISP_LOG
+		dispdebug("Control: %08x%s\n", ctrl, buf);
+#endif
 	}
 #endif
 

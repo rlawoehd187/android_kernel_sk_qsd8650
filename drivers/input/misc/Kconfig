@@ -371,4 +371,14 @@ config INPUT_KP_FLIP_SWITCH
 	  To compile this driver as a module, choose M here: the
 	  module will be called kp_flip_switch.
 
+config BMA150
+	tristate "Bosch BMA150 accelerometer"
+	default n
+	help
+	  Say Y here if you want support for the BMA150 accelerometer
+	  device.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bma150.
+
 endif

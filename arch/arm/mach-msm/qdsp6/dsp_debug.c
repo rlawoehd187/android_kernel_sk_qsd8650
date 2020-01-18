@@ -38,6 +38,9 @@ void q6audio_dsp_not_responding(void)
 
 	if (atomic_add_return(1, &dsp_crash_count) != 1) {
 		pr_err("q6audio_dsp_not_responding() - parking additional crasher...\n");
+#ifdef CONFIG_PANIC_DISP_LOG
+		dispdebug("q6audio_dsp_not_responding() - parking additional crasher...\n");
+#endif
 		for (;;)
 			msleep(1000);
 	}

@@ -815,7 +815,11 @@ static void vfe_process_error_irq(struct vfe_interrupt_status *irqstatus)
 		vfe_proc_ops(VFE_MSG_ID_BUS_OVERFLOW, NULL);
 
 	if (irqstatus->camifErrorIrq) {
+#if defined(CONFIG_SKTS_CAM_KERNEL_COMMON) // FEATURE_SKTS_CAM_MSG_CAMIF_ERROR
+		pr_err("vfe_irq: camif errors\n");
+#else
 		CDBG("vfe_irq: camif errors\n");
+#endif
 		vfe_proc_ops(VFE_MSG_ID_CAMIF_ERROR, NULL);
 	}
 

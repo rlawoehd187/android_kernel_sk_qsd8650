@@ -94,6 +94,8 @@ obj-$(CONFIG_FB_MSM_TVOUT_NTSC) += tv_ntsc.o
 obj-$(CONFIG_FB_MSM_TVOUT_PAL) += tv_pal.o
 
 obj-$(CONFIG_FB_MSM_EXTMDDI_SVGA) += mddi_ext_lcd.o
+obj-$(CONFIG_FB_MSM_LCDC_SONY_WVGA) += lcdc_sony_wvga.o lcdbl_semtech_sc654.o
 
+obj-$(CONFIG_PANIC_DISP_LOG) += panic_disp_log.o
 clean:
 	rm *.o .*cmd

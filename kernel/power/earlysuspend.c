@@ -27,7 +27,11 @@ enum {
 	DEBUG_USER_STATE = 1U << 0,
 	DEBUG_SUSPEND = 1U << 2,
 };
+#ifdef CONFIG_MACH_QSD8X50_S1
+static int debug_mask = DEBUG_SUSPEND | DEBUG_USER_STATE;
+#else
 static int debug_mask = DEBUG_USER_STATE;
+#endif
 module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
 static DEFINE_MUTEX(early_suspend_lock);
@@ -70,6 +74,10 @@ void unregister_early_suspend(struct early_suspend *handler)
 }
 EXPORT_SYMBOL(unregister_early_suspend);
 
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+int f_early_suspend = 0;
+#endif
 static void early_suspend(struct work_struct *work)
 {
 	struct early_suspend *pos;
@@ -93,12 +101,20 @@ static void early_suspend(struct work_struct *work)
 
 	if (debug_mask & DEBUG_SUSPEND)
 		pr_info("early_suspend: call handlers\n");
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+	f_early_suspend = 1;
+#endif
 	list_for_each_entry(pos, &early_suspend_handlers, link) {
 		if (pos->suspend != NULL)
 			pos->suspend(pos);
 	}
+#ifdef CONFIG_MACH_QSD8X50_S1
+	f_early_suspend = 0;
+#endif
 	mutex_unlock(&early_suspend_lock);
 
+	
 	if (debug_mask & DEBUG_SUSPEND)
 		pr_info("early_suspend: sync\n");
 
@@ -159,6 +175,7 @@ void request_suspend_state(suspend_state_t new_state)
 			ktime_to_ns(ktime_get()),
 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+		pr_info("new_state = %d, old_sleep = %d, state = %d \n", new_state, old_sleep, state);
 	}
 	if (!old_sleep && new_state != PM_SUSPEND_ON) {
 		state |= SUSPEND_REQUESTED;

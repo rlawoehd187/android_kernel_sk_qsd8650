@@ -2153,6 +2153,12 @@ config FB_MSM_LOGO
 	---help---
 	  Show /logo.rle during boot.
 
+config FB_MSM_BOOTING_BAR
+	bool "MSM Frame Buffer Booting Progress Bar"
+	default y
+	---help---
+	  Show Booting Progress Bar.
+
 config FB_MSM_LCDC_HW
 	bool
 	default n
@@ -2275,6 +2281,11 @@ config FB_MSM_LCDC_TOSHIBA_WVGA_PT
 	bool
 	select FB_MSM_LCDC_PANEL
 	default n
+	
+config FB_MSM_LCDC_SONY_WVGA
+	bool
+	select FB_MSM_LCDC_PANEL
+	default n	
 
 config FB_MSM_LCDC_SHARP_WVGA_PT
 	bool
@@ -2317,6 +2328,13 @@ config FB_MSM_LCDC_TOSHIBA_WVGA_PT_PANEL
 	select FB_MSM_LCDC_TOSHIBA_WVGA_PT
 	---help---
 	  Support for LCDC Toshiba WVGA PT (480x800) panel
+	  
+config FB_MSM_LCDC_SONY_WVGA_PANEL
+	depends on FB_MSM_LCDC_HW
+	bool "LCDC Sony WVGA Panel"
+	select FB_MSM_LCDC_SONY_WVGA
+	---help---
+	  Support for LCDC Sony WVGA (480x800) panel	  
 
 config FB_MSM_LCDC_SHARP_WVGA_PT_PANEL
 	depends on FB_MSM_LCDC_HW

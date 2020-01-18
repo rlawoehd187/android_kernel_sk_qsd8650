@@ -142,4 +142,5 @@ config USB_DABUSB
 	  module will be called dabusb.
 endif # DAB
 
+source "drivers/media/tdmb/Kconfig"
 endif # MEDIA_SUPPORT

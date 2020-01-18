@@ -30,6 +30,9 @@
 #include "acpuclock.h"
 #include "avs.h"
 #include "clock.h"
+#ifdef CONFIG_MACH_QSD8X50_S1
+#include <mach/board-s1.h>
+#endif
 
 #define SHOT_SWITCH 4
 #define HOP_SWITCH 5
@@ -90,9 +93,21 @@ struct clkctl_acpu_speed acpu_freq_tbl_998[] = {
 	{ 0, 806400, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x15, 1175},
 	{ 0, 844800, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x16, 1225},
 	{ 0, 883200, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x17, 1250},
+#ifdef CONFIG_MACH_QSD8X50_S1
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+	{ 0, 921600, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x18, 1325},
+	{ 0, 960000, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x19, 1325},
+	{ 1, 998400, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x1A, 1325},
+#else
+	{ 0, 921600, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x18, 1350},
+	{ 0, 960000, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x19, 1350},
+	{ 1, 998400, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x1A, 1350},
+#endif
+#else
 	{ 0, 921600, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x18, 1300},
 	{ 0, 960000, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x19, 1300},
 	{ 1, 998400, ACPU_PLL_3, 0, 0, 0, 0, 128000, 1, 0x1A, 1300},
+#endif
 	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
 
@@ -253,7 +268,11 @@ static void scpll_apps_enable(bool state)
 		regval &= ~(0x7);
 		writel(regval, SCPLL_CTL_ADDR);
 	}
+#ifdef CONFIG_MACH_QSD8X50_S1
+	udelay(drv_state.acpu_switch_time_us);
+#else
 	udelay(drv_state.vdd_switch_time_us);
+#endif
 
 	if (state)
 		dprintk("PLL 3 Enabled\n");
@@ -393,6 +412,20 @@ static void config_pll(struct clkctl_acpu_speed *s)
 
 static int acpuclk_set_vdd_level(int vdd)
 {
+#ifdef CONFIG_MACH_QSD8X50_S1
+	int rc;
+	if (drv_state.acpu_set_vdd) {
+		dprintk("Switching VDD to %d mV\n", vdd);
+		rc = drv_state.acpu_set_vdd(vdd);
+		udelay(drv_state.vdd_switch_time_us);
+		return rc;
+	} else {
+		/* Assume that the PMIC supports scaling the processor
+		 * to its maximum frequency at its default voltage.
+		 */
+		return 0;
+	}
+#else
 	if (drv_state.acpu_set_vdd) {
 		dprintk("Switching VDD to %d mV\n", vdd);
 		return drv_state.acpu_set_vdd(vdd);
@@ -402,6 +435,7 @@ static int acpuclk_set_vdd_level(int vdd)
 		 */
 		return 0;
 	}
+#endif
 }
 
 int acpuclk_set_rate(int cpu, unsigned long rate, enum setrate_reason reason)
@@ -570,7 +604,11 @@ static void __init acpuclk_init(void)
 	}
 
 	drv_state.current_speed = speed;
+#ifdef CONFIG_MACH_QSD8X50_S1
+	res = 0;	//Do not set EBI1 minimun rate during initializing to protect LCDC clock noise
+#else
 	res = ebi1_clk_set_min_rate(CLKVOTE_ACPUCLK, speed->axiclk_khz * 1000);
+#endif
 	if (res < 0)
 		pr_warning("Setting AXI min rate failed (%d)\n", res);
 

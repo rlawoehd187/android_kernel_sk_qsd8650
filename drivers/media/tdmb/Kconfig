@@ -1,0 +1,10 @@
+menu "TDMB support"
+
+config TDMB_T3700
+	tristate "INCTECH T3700 TDMB Chip Support"
+	depends on I2C && MACH_QSD8X50_S1
+	help
+	  Enable this driver to get read/write support to INCTECH TDMB,
+	  
+
+endmenu

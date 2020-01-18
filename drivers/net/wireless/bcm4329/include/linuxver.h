@@ -2,7 +2,7 @@
  * Linux-specific abstractions to gain some independence from linux kernel versions.
  * Pave over some 2.2 versus 2.4 versus 2.6 kernel differences.
  *
- * Copyright (C) 1999-2009, Broadcom Corporation
+ * Copyright (C) 1999-2010, Broadcom Corporation
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: linuxver.h,v 13.38.8.1.8.3 2009/06/19 04:42:45 Exp $
+ * $Id: linuxver.h,v 13.38.8.1.8.6 2010/04/29 05:00:46 Exp $
  */
 
 
@@ -33,8 +33,12 @@
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0))
 #include <linux/config.h>
 #else
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33))
+#include <generated/autoconf.h>
+#else
 #include <linux/autoconf.h>
 #endif
+#endif 
 #include <linux/module.h>
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 3, 0))
@@ -425,11 +429,22 @@ pci_restore_state(struct pci_dev *dev, u32 *buffer)
 #define CHECKSUM_HW	CHECKSUM_PARTIAL
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31))
+#define KILL_PROC(nr, sig) \
+{ \
+struct task_struct *tsk; \
+struct pid *pid;    \
+pid = find_get_pid((pid_t)nr);    \
+tsk = pid_task(pid, PIDTYPE_PID);    \
+if (tsk) send_sig(sig, tsk, 1); \
+}
+#else
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && (LINUX_VERSION_CODE <= \
+	KERNEL_VERSION(2, 6, 30))
 #define KILL_PROC(pid, sig) \
 { \
 	struct task_struct *tsk; \
-	tsk = pid_task(find_vpid(pid), PIDTYPE_PID); \
+	tsk = find_task_by_vpid(pid); \
 	if (tsk) send_sig(sig, tsk, 1); \
 }
 #else
@@ -437,6 +452,7 @@ pci_restore_state(struct pci_dev *dev, u32 *buffer)
 { \
 	kill_proc(pid, sig, 1); \
 }
+#endif 
 #endif 
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0))

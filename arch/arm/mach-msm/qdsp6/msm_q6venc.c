@@ -42,6 +42,8 @@
 #define VENC_GET_MAJOR_VERSION(version) ((version & MAJOR_MASK)>>16)
 #define VENC_GET_MINOR_VERSION(version) (version & MINOR_MASK)
 
+#define MAX_SUPPORTED_ENC_INSTANCES (3) //sean
+
 enum {
 	VENC_BUFFER_TYPE_INPUT,
 	VENC_BUFFER_TYPE_OUTPUT,
@@ -1014,9 +1016,16 @@ static int q6venc_open(struct inode *inode, struct file *file)
 	struct venc_dev *dvenc;
 	struct venc_msg_list *plist;
 	struct dal_info version_info;
+	
+	if (venc_ref >= MAX_SUPPORTED_ENC_INSTANCES) { //sean
+		pr_err("%s: Max allowed instances exceeded \n", __func__);
+		return -EBUSY;
+	}
+	venc_ref++;
 
 	dvenc = kzalloc(sizeof(struct venc_dev), GFP_KERNEL);
 	if (!dvenc) {
+		venc_ref--;
 		pr_err("%s: unable to allocate memory for struct venc_dev\n",
 			__func__);
 		return -ENOMEM;
@@ -1028,7 +1037,7 @@ static int q6venc_open(struct inode *inode, struct file *file)
 	init_waitqueue_head(&dvenc->venc_msg_evt);
 	spin_lock_init(&dvenc->venc_msg_list_lock);
 	spin_lock_init(&dvenc->venc_pmem_list_lock);
-	venc_ref++;
+	//venc_ref++;
 	for (i = 0; i < VENC_MSG_MAX; i++) {
 		plist = kzalloc(sizeof(struct venc_msg_list), GFP_KERNEL);
 		if (!plist) {

@@ -40,7 +40,9 @@ void msm_dmov_stop_cmd(unsigned id, struct msm_dmov_cmd *cmd, int graceful);
 void msm_dmov_flush(unsigned int id);
 int msm_dmov_exec_cmd(unsigned id, unsigned int crci_mask, unsigned int cmdptr);
 unsigned int msm_dmov_build_crci_mask(int n, ...);
-
+#ifdef CONFIG_PANIC_LOG_SAVE
+int msm_panic_dmov_exec_cmd(unsigned id, unsigned int crci_mask, unsigned int cmdptr);
+#endif
 #ifdef CONFIG_ARCH_MSM8X60
 #define DMOV_BASE_ADDR MSM_DMOV_ADM0_BASE
 #else

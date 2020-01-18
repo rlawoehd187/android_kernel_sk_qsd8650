@@ -261,6 +261,10 @@ extern int printk_delay_msec;
 })
 
 void log_buf_kexec_setup(void);
+#ifdef CONFIG_PANIC_DISP_LOG
+asmlinkage int dispdebug(const char * fmt, ...)
+	__attribute__ ((format (printf, 1, 2))) __cold;
+#endif /*CONFIG_PANIC_DISP_LOG*/
 #else
 static inline int vprintk(const char *s, va_list args)
 	__attribute__ ((format (printf, 1, 0)));
@@ -279,6 +283,12 @@ static inline bool printk_timed_ratelimit(unsigned long *caller_jiffies, \
 static inline void log_buf_kexec_setup(void)
 {
 }
+
+#ifdef CONFIG_PANIC_DISP_LOG
+static inline int dispdebug(const char *s, ...)
+	__attribute__ ((format (printf, 1, 2)));
+static inline int __cold dispdebug(const char *s, ...) { return 0; }
+#endif /*CONFIG_PANIC_DISP_LOG*/
 #endif
 
 extern int printk_needs_cpu(int cpu);

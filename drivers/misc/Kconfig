@@ -360,6 +360,34 @@ config PMIC8058_NFC
 	  Qualcomm PM8058 chip has a module to support NFC (Near Field
 	  Communication). This option enables the driver to support it.
 
+config APDS_9180
+	tristate "Proximity sensor APDS9180"
+	depends on I2C && MACH_QSD8X50_S1
+	default n
+	---help---
+	 This driver uses bitbang I2C interface and it provides character device usable from user space
+
+config YAMAHA_YDA158
+	tristate "YAMAHA YDA158 Audio AMP"
+	depends on I2C && MACH_QSD8X50_S1
+	default n
+	---help---
+	 This driver uses bitbang I2C interface and it is used for amplifying audio signal
+
+config LTR_505ALS
+	tristate "Lite-On Ambient Light Photo Sensor & Proximity Sensor"
+	depends on I2C && MACH_QSD8X50_S1
+	default n
+	---help---
+	 This driver uses bitbang I2C interface and it provides character device usable from user space
+
+config AMS_0303
+	tristate "AMOTEK Magnectic field sensor"
+	depends on I2C && MACH_QSD8X50_S1
+	default n
+	---help---
+	 This driver uses bitbang I2C interface and it provides character device usable from user space
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

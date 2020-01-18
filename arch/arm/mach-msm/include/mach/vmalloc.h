@@ -20,7 +20,14 @@
 #ifdef CONFIG_VMSPLIT_2G
 #define VMALLOC_END	  (PAGE_OFFSET + 0x60000000)
 #else
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+/* IO devices are mapped at 0xF8000000 and above */
+#define VMALLOC_END	  0xF8000000
+#else
 #define VMALLOC_END	  (PAGE_OFFSET + 0x20000000)
+#endif
+
 #endif
 
 #endif

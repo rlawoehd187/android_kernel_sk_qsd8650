@@ -68,6 +68,24 @@ config VB6801
 	depends on MSM_CAMERA && !ARCH_MSM8X60
 	---help---
 	  5M with flash
+	  
+config SKTS_CAM_KERNEL_COMMON
+	bool "SKTS camera common"
+	depends on MSM_CAMERA && !ARCH_MSM8X60
+	---help---
+	  STKS Camera Common Features
+	  
+config ISX006
+	bool "Sensor isx006 (YUV 5M)"
+	depends on MSM_CAMERA && !ARCH_MSM8X60
+	---help---
+	  SONY 5M YUV Sensor with AutoFocus
+	  
+config MT9V113
+	bool "Sensor mt9v113 (YUV VGA)"
+	depends on MSM_CAMERA && !ARCH_MSM8X60
+	---help---
+	  Aptina VGA YUV Sensor
 
 config MSM_CAMERA_FLASH
 	bool "Qualcomm MSM camera flash support"

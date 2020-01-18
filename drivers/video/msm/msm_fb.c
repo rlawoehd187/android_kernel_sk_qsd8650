@@ -47,9 +47,23 @@
 #include "mdp.h"
 #include "mdp4.h"
 
+#define FEATURE_SKTS_SILENT_RESET
+#ifdef FEATURE_SKTS_SILENT_RESET
+#include <linux/init.h>
+static char silent_reset =0;
+#endif
 #ifdef CONFIG_FB_MSM_LOGO
+
+#ifdef CONFIG_FB_MSM_BOOTING_BAR
+extern int load_booting_progress(int width);
+char fBootingBar = 0;
+#endif
+
+#ifndef CONFIG_MACH_QSD8X50_S1
 #define INIT_IMAGE_FILE "/logo.rle"
 extern int load_565rle_image(char *filename);
+#endif
+
 #endif
 
 static unsigned char *fbram;
@@ -216,7 +230,7 @@ static int msm_fb_probe(struct platform_device *pdev)
 		}
 		MSM_FB_INFO("msm_fb_probe:  phy_Addr = 0x%x virt = 0x%x\n",
 			     (int)fbram_phys, (int)fbram);
-
+		
 		msm_fb_resource_initialized = 1;
 		return 0;
 	}
@@ -471,6 +485,10 @@ static void msmfb_early_suspend(struct early_suspend *h)
 	struct msm_fb_data_type *mfd = container_of(h, struct msm_fb_data_type,
 						    early_suspend);
 	msm_fb_suspend_sub(mfd);
+#ifdef CONFIG_MACH_QSD8X50_S1
+	printk(KERN_INFO "%s\n", __func__);
+#endif
+
 }
 
 static void msmfb_early_resume(struct early_suspend *h)
@@ -478,6 +496,10 @@ static void msmfb_early_resume(struct early_suspend *h)
 	struct msm_fb_data_type *mfd = container_of(h, struct msm_fb_data_type,
 						    early_suspend);
 	msm_fb_resume_sub(mfd);
+#ifdef CONFIG_MACH_QSD8X50_S1
+	printk(KERN_INFO "%s\n", __func__);
+#endif
+
 }
 #endif
 
@@ -933,8 +955,9 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	fbi->screen_base = fbram;
 	fbi->fix.smem_start = (unsigned long)fbram_phys;
 
+#ifndef CONFIG_MACH_QSD8X50_S1
 	memset(fbi->screen_base, 0x0, fix->smem_len);
-
+#endif
 	mfd->op_enable = TRUE;
 	mfd->panel_power_on = FALSE;
 
@@ -978,7 +1001,18 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	     mfd->index, fbi->var.xres, fbi->var.yres, fbi->fix.smem_len);
 
 #ifdef CONFIG_FB_MSM_LOGO
+	#ifndef CONFIG_MACH_QSD8X50_S1
 	if (!load_565rle_image(INIT_IMAGE_FILE)) ;	/* Flip buffer */
+	#endif
+	
+	#ifdef CONFIG_FB_MSM_BOOTING_BAR
+	#ifdef FEATURE_SKTS_SILENT_RESET
+	if (silent_reset == 0) {
+		fBootingBar = TRUE;
+	}
+	#endif
+	load_booting_progress(150);	//OSBL
+	#endif
 #endif
 	ret = 0;
 
@@ -2669,10 +2703,47 @@ int get_fb_phys_info(unsigned long *start, unsigned long *len, int fb_num)
 }
 EXPORT_SYMBOL(get_fb_phys_info);
 
+#ifdef FEATURE_SKTS_SILENT_RESET
+static void check_silent_reset(char *name)
+{
+    char *value = strchr(name, '=');
+
+    if (value == 0) return;
+    *value++ = 0;
+    if (*name == 0) return;
+
+	if (!strcmp(name,"androidboot.silent_reset")) {
+		if (!strcmp(value, "true")) {
+			silent_reset =1;
+		}
+	}
+}
+
+static int silent_write_proc(struct file *file, const char __user *buffer,
+	unsigned long count, void *data)
+{
+	char mode;
+
+	if (copy_from_user(&mode, buffer, 1))
+		return -EFAULT;
+	silent_reset = mode- '0';
+	
+	return count;
+}
+
+static int silent_read_proc(char *page, char **start, off_t offset,
+			    int count, int *eof, void *data)
+{
+	return snprintf(page, count, "%u\n", silent_reset);
+}
+#endif
 int __init msm_fb_init(void)
 {
 	int rc = -ENODEV;
-
+#ifdef FEATURE_SKTS_SILENT_RESET
+	char cmd[1024];
+	struct proc_dir_entry *silent_entry;
+#endif
 	if (msm_fb_register_driver())
 		return rc;
 
@@ -2692,7 +2763,29 @@ int __init msm_fb_init(void)
 		}
 	}
 #endif
+#ifdef FEATURE_SKTS_SILENT_RESET
+	{
+		char* ptr;
 
+		memcpy(cmd, saved_command_line, 1024);
+		
+		ptr = cmd;
+		
+	    while (ptr && *ptr) {
+    	    char *x = strchr(ptr, ' ');
+        	if (x != 0) *x++ = 0;
+			check_silent_reset(ptr);
+			ptr = x;	
+	   	}
+		silent_entry = create_proc_entry("silent_reset",
+				S_IRUGO | S_IWUSR | S_IWGRP, NULL);
+		if (silent_entry) {
+			silent_entry->read_proc = silent_read_proc;
+			silent_entry->write_proc = silent_write_proc;
+			silent_entry->data = NULL;
+		}
+	}
+#endif
 	return 0;
 }
 

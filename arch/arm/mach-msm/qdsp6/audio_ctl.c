@@ -118,6 +118,94 @@ static int q6_ioctl(struct inode *inode, struct file *file,
 	case AUDIO_REINIT_ACDB:
 		rc = 0;
 		break;
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+	case AUDIO_GET_TX_MUTE:
+	{
+		extern int q6audio_get_tx_mute(void);
+
+		int mute = q6audio_get_tx_mute();
+
+		rc = copy_to_user((void*)arg, &mute, sizeof(mute));
+		if (!rc)
+			rc = 0;
+	}
+	break;
+
+	case AUDIO_SET_RX_MUTE:
+	{
+		extern int q6audio_set_rx_mute(int mute);
+		
+		rc = copy_from_user(&n, (void *)arg, sizeof(n));
+		if (!rc)
+			rc = q6audio_set_rx_mute(n);
+	}
+	break;
+
+	case AUDIO_GET_RX_MUTE:
+	{
+		extern int mVoiceMute;
+
+		rc = copy_to_user((void*)arg, &mVoiceMute, sizeof(mVoiceMute));
+		if (!rc)
+			rc = 0;
+	}
+	break;
+
+	case AUDIO_GET_ACDB_INFO:
+	{
+		extern int acdb_get_config_table_ext(struct s1_tune_acdb_info *pInfo);
+		struct s1_tune_acdb_info *pInfo;
+		
+		pInfo = kmalloc(sizeof(struct s1_tune_acdb_info), GFP_KERNEL);
+		if (!pInfo)
+		{
+			rc = -EIO;
+			break;
+		}
+
+		rc = -EFAULT;
+		if (!copy_from_user(pInfo, (void *)arg, 3 * sizeof(uint32_t)))
+		{
+			rc = acdb_get_config_table_ext(pInfo);
+			if (rc >= 0)
+			{
+				if (!copy_to_user((void*)arg, pInfo, sizeof(struct s1_tune_acdb_info)))
+				{
+					rc = 0;
+				}
+			}
+		}
+		kfree(pInfo);
+	}
+	break;
+
+	case AUDIO_SET_ACDB_INFO:
+	{
+		extern int acdb_set_config_table_ext(struct s1_tune_acdb_info *pInfo);
+		struct s1_tune_acdb_info *pInfo;
+		
+		pInfo = kmalloc(sizeof(struct s1_tune_acdb_info), GFP_KERNEL);
+		if (!pInfo)
+		{
+			rc = -EIO;
+			break;
+		}
+
+		rc = -EFAULT;
+		if (!copy_from_user(pInfo, (void *)arg, sizeof(struct s1_tune_acdb_info)))
+		{
+			rc = acdb_set_config_table_ext(pInfo);
+			if (rc == 0)
+			{
+				rc = 0;
+			}
+		}
+		kfree(pInfo);
+	}
+	break;
+#endif
+
 	default:
 		rc = -EINVAL;
 	}

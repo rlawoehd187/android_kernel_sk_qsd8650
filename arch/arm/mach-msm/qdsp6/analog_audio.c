@@ -19,23 +19,35 @@
 #include <mach/pmic.h>
 #include <mach/msm_qdsp6_audio.h>
 
+/* 157 pin is used for bluetooth enable BT_EN 
+   GPIO_HEADSET_AMP is not used for S1 */
+   
+#ifndef CONFIG_MACH_QSD8X50_S1
 #define GPIO_HEADSET_AMP 157
+#endif
 
 void analog_init(void)
 {
 	/* stereo pmic init */
 	pmic_spkr_set_gain(LEFT_SPKR, SPKR_GAIN_PLUS12DB);
 	pmic_spkr_set_gain(RIGHT_SPKR, SPKR_GAIN_PLUS12DB);
-	pmic_mic_set_volt(MIC_VOLT_1_80V);
 
+
+#ifndef CONFIG_MACH_QSD8X50_S1
+	pmic_mic_set_volt(MIC_VOLT_1_80V);
 	gpio_direction_output(GPIO_HEADSET_AMP, 1);
 	gpio_set_value(GPIO_HEADSET_AMP, 0);
+#else
+	pmic_mic_set_volt(MIC_VOLT_2_00V);
+#endif	
 }
 
 void analog_headset_enable(int en)
 {
+#ifndef CONFIG_MACH_QSD8X50_S1	
 	/* enable audio amp */
 	gpio_set_value(GPIO_HEADSET_AMP, !!en);
+#endif	
 }
 
 void analog_speaker_enable(int en)

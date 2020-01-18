@@ -30,6 +30,8 @@
 #ifndef DIAGCHAR_H
 #define DIAGCHAR_H
 
+#define SKTS_MAT_PORTING
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/mempool.h>

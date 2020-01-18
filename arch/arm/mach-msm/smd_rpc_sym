@@ -78,6 +78,7 @@
 0x3000005F  dsucsdappif_apis
 0x30000060  pmapp_gen
 0x30000061  pm_lib
+0x30000062  keypad
 0x30000063  hsu_app_apis
 0x30000064  hsu_mdm_apis
 0x30000065  adie_adc_remote_atom
@@ -103,6 +104,7 @@
 0x3000007F  oss_rrcasn_remote
 0x30000080  pmapp_otg_remote
 0x30000081  ping_mdm_rpc
+0x30000082  ping_kernel_rpc
 0x30000087  ukcc_ipc_apis
 0x30000089  vbatt_remote
 0x3000008A  mfpal_fps

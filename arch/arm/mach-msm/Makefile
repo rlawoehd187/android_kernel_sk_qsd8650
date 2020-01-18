@@ -97,8 +97,14 @@ obj-$(CONFIG_MACH_TROUT) += board-trout-keypad.o board-trout-panel.o
 obj-$(CONFIG_MACH_TROUT) += htc_akm_cal.o htc_wifi_nvs.o htc_acoustic.o
 obj-$(CONFIG_MACH_TROUT) += board-trout-mmc.o board-trout-wifi.o
 obj-$(CONFIG_ARCH_QSD8X50) += devices-qsd8x50.o
-obj-$(CONFIG_MACH_QSD8X50_SURF) += board-qsd8x50.o
-obj-$(CONFIG_MACH_QSD8X50_FFA) += board-qsd8x50.o
+
+ifdef CONFIG_MACH_QSD8X50_S1
+	obj-$(CONFIG_MACH_QSD8X50_S1) += board-s1.o
+else
+	obj-$(CONFIG_MACH_QSD8X50_SURF) += board-qsd8x50.o
+	obj-$(CONFIG_MACH_QSD8X50_FFA) += board-qsd8x50.o
+endif
+
 #obj-$(CONFIG_MACH_QSD8X50_COMET) += board-comet.o
 obj-$(CONFIG_MACH_QSD8X50A_SURF) += board-qsd8x50.o
 obj-$(CONFIG_MACH_QSD8X50A_FFA) += board-qsd8x50.o
@@ -147,3 +153,10 @@ obj-$(CONFIG_MSM7200A_TLMM)	+= gpio.o generic_gpio.o
 endif
 obj-$(CONFIG_MSM7200A_TLMM)	+= tlmm-msm7200a.o
 obj-$(CONFIG_MSM8660_TLMM)	+= tlmm-msm8660.o msm8660-gpio.o
+
+obj-$(CONFIG_MACH_QSD8X50_S1) += board-s1-keypad.o board-s1-vkey.o
+obj-$(CONFIG_MACH_QSD8X50_S1) += board-s1-wifi.o
+obj-$(CONFIG_MACH_QSD8X50_S1) += board-s1-rfkill.o
+obj-$(CONFIG_MACH_QSD8X50_S1) += board-s1-h2w.o
+obj-$(CONFIG_MACH_QSD8X50_S1) += msm_gpio_vibrator.o msm_vibrator.o 
+obj-$(CONFIG_S1_TRANSFERJET) += board-s1-trj.o

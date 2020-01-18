@@ -363,12 +363,12 @@ int dal_call_raw(struct dal_client *client,
 	smd_write(dch->sch, data, data_len);
 	spin_unlock_irqrestore(&dch->lock, flags);
 
-	if (!wait_event_timeout(client->wait, (client->status != -EBUSY), 5*HZ)) {
+	if (!wait_event_timeout(client->wait, (client->status != -EBUSY), 5 * HZ)) {
 		dal_trace_dump(client);
 		pr_err("[%s:%s] call timed out. dsp is probably dead.\n",
 				__MM_FILE__, __func__);
 		dal_trace_print(hdr, data, data_len, 0);
-		q6audio_dsp_not_responding();
+		//q6audio_dsp_not_responding(); sean - return for omx mem release & retry 
 	}
 
 	return client->status;

@@ -39,14 +39,27 @@ MODULE_VERSION("1.0");
 struct diagchar_dev *driver;
 /* The following variables can be specified by module options */
  /* for copy buffer */
+#ifdef SKTS_MAT_PORTING
+static unsigned int itemsize = 0x100000; /*Size of item in the mempool */
+static unsigned int poolsize = 3; /*Number of items in the mempool */
+#else
 static unsigned int itemsize = 2048; /*Size of item in the mempool */
 static unsigned int poolsize = 10; /*Number of items in the mempool */
+#endif
 /* for hdlc buffer */
 static unsigned int itemsize_hdlc = 8192; /*Size of item in the mempool */
+#ifdef SKTS_MAT_PORTING
+static unsigned int poolsize_hdlc = 70;
+#else
 static unsigned int poolsize_hdlc = 8;  /*Number of items in the mempool */
+#endif
 /* for usb structure buffer */
 static unsigned int itemsize_usb_struct = 20; /*Size of item in the mempool */
+#ifdef SKTS_MAT_PORTING
+static unsigned int poolsize_usb_struct = 70;
+#else
 static unsigned int poolsize_usb_struct = 8; /*Number of items in the mempool */
+#endif
 /* This is the max number of user-space clients supported at initialization*/
 static unsigned int max_clients = 15;
 static unsigned int threshold_client_limit = 30;
@@ -562,89 +575,151 @@ static int diagchar_write(struct file *file, const char __user *buf,
 	}
 #endif
 	mutex_lock(&driver->diagchar_mutex);
-	if (!buf_hdlc)
-		buf_hdlc = diagmem_alloc(driver, HDLC_OUT_BUF_SIZE,
-						 POOL_TYPE_HDLC);
-	if (!buf_hdlc) {
-		ret = -ENOMEM;
-		goto fail_free_hdlc;
-	}
-	if (HDLC_OUT_BUF_SIZE - driver->used <= (2*payload_size) + 3) {
-		err = diag_device_write(buf_hdlc, APPS_DATA);
-		if (err) {
-			/*Free the buffer right away if write failed */
-			diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
-			diagmem_free(driver, (unsigned char *)driver->
-				 usb_write_ptr_svc, POOL_TYPE_USB_STRUCT);
-			ret = -EIO;
-			goto fail_free_hdlc;
-		}
-		buf_hdlc = NULL;
+#ifdef SKTS_MAT_PORTING
+	if (payload_size > HDLC_OUT_BUF_SIZE){
+		if (buf_hdlc) { 
+			driver->usb_write_ptr_svc = (struct diag_request *)
+				(diagmem_alloc(driver, sizeof(struct diag_request),
+					POOL_TYPE_USB_STRUCT));
+			driver->usb_write_ptr_svc->buf = buf_hdlc;
+			driver->usb_write_ptr_svc->length = driver->used;
+			err = diag_write(driver->usb_write_ptr_svc);
+			if (err) {
+				/*Free the buffer right away if write failed */
+				diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
+				ret = -EIO;
+				goto fail_free_hdlc;
+			}
+			buf_hdlc = NULL;
 #ifdef DIAG_DEBUG
-		printk(KERN_INFO "\n size written is %d\n", driver->used);
+			printk(KERN_INFO "\n size written  is %d\n", driver->used);
 #endif
-		driver->used = 0;
-		buf_hdlc = diagmem_alloc(driver, HDLC_OUT_BUF_SIZE,
+			driver->used = 0;
+		}
+	
+		while (send.state < DIAG_STATE_COMPLETE) {
+			buf_hdlc = diagmem_alloc(driver, HDLC_OUT_BUF_SIZE,
+							POOL_TYPE_HDLC);
+			if (!buf_hdlc) {
+				printk(KERN_INFO "buf_hdlc malloc error \n");
+			}
+			enc.dest = buf_hdlc;
+			enc.dest_last = (void *)(buf_hdlc + HDLC_OUT_BUF_SIZE -4);
+			diag_hdlc_encode(&send, &enc);
+			
+			driver->used = (uint32_t) enc.dest - (uint32_t) buf_hdlc;
+
+			driver->usb_write_ptr_svc = (struct diag_request *)
+				(diagmem_alloc(driver, sizeof(struct diag_request),
+					POOL_TYPE_USB_STRUCT));
+			if (!driver->usb_write_ptr_svc) {
+				printk(KERN_INFO "usb_write_ptr_svc malloc error\n");
+			}
+			driver->usb_write_ptr_svc->buf = buf_hdlc;
+			driver->usb_write_ptr_svc->length = driver->used;
+			err = diag_write(driver->usb_write_ptr_svc);
+			if (err) {
+				/*Free the buffer right away if write failed */
+				diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
+				ret = -EIO;
+				goto fail_free_hdlc;
+			}
+			buf_hdlc = NULL;
+#ifdef DIAG_DEBUG
+			printk(KERN_INFO "\n size written 00_11 is %d\n", driver->used);
+#endif
+			driver->used = 0;
+		
+		}
+
+	}
+	else {
+#endif
+		if (!buf_hdlc)
+			buf_hdlc = diagmem_alloc(driver, HDLC_OUT_BUF_SIZE,
 							 POOL_TYPE_HDLC);
 		if (!buf_hdlc) {
 			ret = -ENOMEM;
 			goto fail_free_hdlc;
 		}
-	}
-
-	enc.dest = buf_hdlc + driver->used;
-	enc.dest_last = (void *)(buf_hdlc + driver->used + 2*payload_size + 3);
-	diag_hdlc_encode(&send, &enc);
-
-	/* This is to check if after HDLC encoding, we are still within the
-	 limits of aggregation buffer. If not, we write out the current buffer
-	and start aggregation in a newly allocated buffer */
-	if ((unsigned int) enc.dest >=
-		 (unsigned int)(buf_hdlc + HDLC_OUT_BUF_SIZE)) {
-		err = diag_device_write(buf_hdlc, APPS_DATA);
-		if (err) {
-			/*Free the buffer right away if write failed */
-			diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
-			diagmem_free(driver, (unsigned char *)driver->
-				 usb_write_ptr_svc, POOL_TYPE_USB_STRUCT);
-			ret = -EIO;
-			goto fail_free_hdlc;
-		}
-		buf_hdlc = NULL;
+		if (HDLC_OUT_BUF_SIZE - driver->used <= (2*payload_size) + 3) {
+			err = diag_device_write(buf_hdlc, APPS_DATA);
+			if (err) {
+				/*Free the buffer right away if write failed */
+				diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
+				diagmem_free(driver, (unsigned char *)driver->
+					 usb_write_ptr_svc, POOL_TYPE_USB_STRUCT);
+				ret = -EIO;
+				goto fail_free_hdlc;
+			}
+			buf_hdlc = NULL;
 #ifdef DIAG_DEBUG
-		printk(KERN_INFO "\n size written is %d\n", driver->used);
+			printk(KERN_INFO "\n size written is %d\n", driver->used);
 #endif
-		driver->used = 0;
-		buf_hdlc = diagmem_alloc(driver, HDLC_OUT_BUF_SIZE,
-							 POOL_TYPE_HDLC);
-		if (!buf_hdlc) {
-			ret = -ENOMEM;
-			goto fail_free_hdlc;
+			driver->used = 0;
+			buf_hdlc = diagmem_alloc(driver, HDLC_OUT_BUF_SIZE,
+								 POOL_TYPE_HDLC);
+			if (!buf_hdlc) {
+				ret = -ENOMEM;
+				goto fail_free_hdlc;
+			}
 		}
+
 		enc.dest = buf_hdlc + driver->used;
-		enc.dest_last = (void *)(buf_hdlc + driver->used +
-							 (2*payload_size) + 3);
+		enc.dest_last = (void *)(buf_hdlc + driver->used + 2*payload_size + 3);
 		diag_hdlc_encode(&send, &enc);
-	}
 
-	driver->used = (uint32_t) enc.dest - (uint32_t) buf_hdlc;
-	if (pkt_type == DATA_TYPE_RESPONSE) {
-		err = diag_device_write(buf_hdlc, APPS_DATA);
-		if (err) {
-			/*Free the buffer right away if write failed */
-			diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
-			diagmem_free(driver, (unsigned char *)driver->
-				 usb_write_ptr_svc, POOL_TYPE_USB_STRUCT);
-			ret = -EIO;
-			goto fail_free_hdlc;
-		}
-		buf_hdlc = NULL;
+		/* This is to check if after HDLC encoding, we are still within the
+		 limits of aggregation buffer. If not, we write out the current buffer
+		and start aggregation in a newly allocated buffer */
+		if ((unsigned int) enc.dest >=
+			 (unsigned int)(buf_hdlc + HDLC_OUT_BUF_SIZE)) {
+			err = diag_device_write(buf_hdlc, APPS_DATA);
+			if (err) {
+				/*Free the buffer right away if write failed */
+				diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
+				diagmem_free(driver, (unsigned char *)driver->
+					 usb_write_ptr_svc, POOL_TYPE_USB_STRUCT);
+				ret = -EIO;
+				goto fail_free_hdlc;
+			}
+			buf_hdlc = NULL;
 #ifdef DIAG_DEBUG
-		printk(KERN_INFO "\n size written is %d\n", driver->used);
+			printk(KERN_INFO "\n size written is %d\n", driver->used);
 #endif
-		driver->used = 0;
-	}
+			driver->used = 0;
+			buf_hdlc = diagmem_alloc(driver, HDLC_OUT_BUF_SIZE,
+								 POOL_TYPE_HDLC);
+			if (!buf_hdlc) {
+				ret = -ENOMEM;
+				goto fail_free_hdlc;
+			}
+			enc.dest = buf_hdlc + driver->used;
+			enc.dest_last = (void *)(buf_hdlc + driver->used +
+								 (2*payload_size) + 3);
+			diag_hdlc_encode(&send, &enc);
+		}
 
+		driver->used = (uint32_t) enc.dest - (uint32_t) buf_hdlc;
+		if (pkt_type == DATA_TYPE_RESPONSE) {
+			err = diag_device_write(buf_hdlc, APPS_DATA);
+			if (err) {
+				/*Free the buffer right away if write failed */
+				diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
+				diagmem_free(driver, (unsigned char *)driver->
+					 usb_write_ptr_svc, POOL_TYPE_USB_STRUCT);
+				ret = -EIO;
+				goto fail_free_hdlc;
+			}
+			buf_hdlc = NULL;
+#ifdef DIAG_DEBUG
+			printk(KERN_INFO "\n size written is %d\n", driver->used);
+#endif
+			driver->used = 0;
+		}
+#ifdef SKTS_MAT_PORTING
+	}
+#endif
 	mutex_unlock(&driver->diagchar_mutex);
 	diagmem_free(driver, buf_copy, POOL_TYPE_COPY);
 	if (!timer_in_progress)	{

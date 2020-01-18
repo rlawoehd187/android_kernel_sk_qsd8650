@@ -1120,6 +1120,7 @@ static int do_write(struct fsg_dev *fsg)
 				}
 			}
 #endif
+
 			/* Did the host decide to stop early? */
 			if (bh->outreq->actual != bh->outreq->length) {
 				fsg->short_packet_received = 1;
@@ -2367,8 +2368,9 @@ static int do_set_config(struct fsg_dev *fsg, u8 new_config)
 	}
 
 	/* Enable the interface */
-	if (new_config != 0)
+	if (new_config != 0) {
 		fsg->config = new_config;
+	}
 
 	switch_set_state(&fsg->sdev, new_config);
 	adjust_wake_lock(fsg);
@@ -2383,6 +2385,7 @@ static void handle_exception(struct fsg_dev *fsg)
 	siginfo_t		info;
 	int			sig;
 	int			i;
+
 	struct fsg_buffhd	*bh;
 	enum fsg_state		old_state;
 	u8			new_config;
@@ -3014,6 +3017,7 @@ int mass_storage_function_add(struct usb_composite_dev *cdev,
 	the_fsg->sdev.name = DRIVER_NAME;
 	the_fsg->sdev.print_name = print_switch_name;
 	the_fsg->sdev.print_state = print_switch_state;
+
 	rc = switch_dev_register(&the_fsg->sdev);
 	if (rc < 0)
 		goto err_switch_dev_register;

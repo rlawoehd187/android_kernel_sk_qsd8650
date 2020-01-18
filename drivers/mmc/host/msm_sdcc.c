@@ -1291,6 +1291,9 @@ static void msmsdcc_early_suspend(struct early_suspend *h)
 	host->polling_enabled = host->mmc->caps & MMC_CAP_NEEDS_POLL;
 	host->mmc->caps &= ~MMC_CAP_NEEDS_POLL;
 	spin_unlock_irqrestore(&host->lock, flags);
+#ifdef CONFIG_MACH_QSD8X50_S1
+	printk(KERN_INFO "%s\n", __func__);
+#endif
 };
 static void msmsdcc_late_resume(struct early_suspend *h)
 {
@@ -1304,6 +1307,9 @@ static void msmsdcc_late_resume(struct early_suspend *h)
 		mmc_detect_change(host->mmc, 0);
 		spin_unlock_irqrestore(&host->lock, flags);
 	}
+#ifdef CONFIG_MACH_QSD8X50_S1
+	printk(KERN_INFO "%s\n", __func__);
+#endif
 };
 #endif
 

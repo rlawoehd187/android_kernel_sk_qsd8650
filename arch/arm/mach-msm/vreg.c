@@ -56,7 +56,11 @@ static struct vreg vregs[] = {
 	VREG("pa",	10, 0, 0),
 	VREG("rftx",	11, 0, 0),
 	VREG("rfrx1",	12, 0, 0),
+#ifdef CONFIG_MACH_QSD8X50_S1
+	VREG("rfrx2",	13, 0, 1),
+#else
 	VREG("rfrx2",	13, 0, 0),
+#endif
 	VREG("synt",	14, 0, 0),
 	VREG("wlan",	15, 0, 0),
 	VREG("usb",	16, 0, 0),

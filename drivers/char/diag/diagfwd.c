@@ -494,7 +494,11 @@ int diagfwd_connect(void)
 	int err;
 
 	printk(KERN_DEBUG "diag: USB connected\n");
+#ifdef SKTS_MAT_PORTING	
+	err = diag_open(driver->poolsize +70);	
+#else
 	err = diag_open(driver->poolsize + 3); /* 2 for A9 ; 1 for q6*/
+#endif
 	if (err)
 		printk(KERN_ERR "diag: USB port open failed");
 	driver->usb_connected = 1;

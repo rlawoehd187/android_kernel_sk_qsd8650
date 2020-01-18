@@ -26,6 +26,9 @@
 #include <linux/usb/gadget.h>
 #include <linux/workqueue.h>
 
+/* Unique DIAG USB Interface class enable flag for SKTS S1 (2010-04-12 ykjeon@sk-w.com) */
+#define USE_SKTS_S1_USB_DIAG_INTERFACE_CLASS_ID
+
 #define WRITE_COMPLETE 0
 #define READ_COMPLETE  0
 #define TRUE  1
@@ -37,9 +40,15 @@ static struct usb_interface_descriptor intf_desc = {
 	.bLength            =	sizeof intf_desc,
 	.bDescriptorType    =	USB_DT_INTERFACE,
 	.bNumEndpoints      =	2,
+#ifdef USE_SKTS_S1_USB_DIAG_INTERFACE_CLASS_ID
+	.bInterfaceClass    =	0xFF,
+	.bInterfaceSubClass =	0xF0,
+	.bInterfaceProtocol =	0x01,
+#else
 	.bInterfaceClass    =	0xFF,
 	.bInterfaceSubClass =	0xFF,
 	.bInterfaceProtocol =	0xFF,
+#endif /* USE_SKTS_S1_USB_DIAG_INTERFACE_CLASS_ID */
 };
 
 static struct usb_endpoint_descriptor hs_bulk_in_desc = {

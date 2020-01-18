@@ -27,6 +27,9 @@
 #define ANDROID_RMNET		0x0009
 #define ANDROID_RNDIS		0x000A
 
+/* Added by ykjeon@sk-w.com 2010-05-11 */
+#define ANDROID_EEM			0x000F
+
 struct android_usb_platform_data {
 	/* USB device descriptor fields */
 	__u16 vendor_id;

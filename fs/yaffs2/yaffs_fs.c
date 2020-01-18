@@ -267,6 +267,10 @@ static void *yaffs_follow_link(struct dentry *dentry, struct nameidata *nd);
 static int yaffs_follow_link(struct dentry *dentry, struct nameidata *nd);
 #endif
 
+#ifdef CONFIG_FB_MSM_BOOTING_BAR
+extern int load_booting_progress(int width);
+#endif
+
 static struct address_space_operations yaffs_file_address_operations = {
 	.readpage = yaffs_readpage,
 	.writepage = yaffs_writepage,
@@ -2023,6 +2027,10 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 
 	memset(&options, 0, sizeof(options));
 
+#ifdef CONFIG_FB_MSM_BOOTING_BAR	
+	load_booting_progress(6);
+#endif	
+
 	if (yaffs_parse_options(&options, data_str)) {
 		/* Option parsing failed */
 		return NULL;
@@ -2156,6 +2164,10 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 		}
 	}
 
+#ifdef CONFIG_FB_MSM_BOOTING_BAR
+	load_booting_progress(6);
+#endif
+
 	/* OK, so if we got here, we have an MTD that's NAND and looks
 	 * like it has the right capabilities
 	 * Set the yaffs_Device up for mtd
@@ -2226,6 +2238,9 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 #endif
 		dev->isYaffs2 = 0;
 	}
+#ifdef CONFIG_FB_MSM_BOOTING_BAR
+	load_booting_progress(6);
+#endif
 	/* ... and common functions */
 	dev->eraseBlockInNAND = nandmtd_EraseBlockInNAND;
 	dev->initialiseNAND = nandmtd_InitialiseNAND;
@@ -2259,6 +2274,9 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 	yaffs_GrossLock(dev);
 
 	err = yaffs_GutsInitialise(dev);
+#ifdef CONFIG_FB_MSM_BOOTING_BAR
+	load_booting_progress(6);
+#endif
 
 	T(YAFFS_TRACE_OS,
 	  ("yaffs_read_super: guts initialised %s\n",
@@ -2281,6 +2299,9 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 	T(YAFFS_TRACE_OS, ("yaffs_read_super: got root inode\n"));
 
 	root = d_alloc_root(inode);
+#ifdef CONFIG_FB_MSM_BOOTING_BAR
+	load_booting_progress(6);
+#endif
 
 	T(YAFFS_TRACE_OS, ("yaffs_read_super: d_alloc_root done\n"));
 
@@ -2294,6 +2315,11 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 	  ("yaffs_read_super: isCheckpointed %d\n", dev->isCheckpointed));
 
 	T(YAFFS_TRACE_OS, ("yaffs_read_super: done\n"));
+
+#ifdef CONFIG_FB_MSM_BOOTING_BAR	
+	load_booting_progress(6);
+#endif
+
 	return sb;
 }
 

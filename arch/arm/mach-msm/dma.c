@@ -23,6 +23,9 @@
 #include <linux/spinlock.h>
 #include <mach/dma.h>
 
+#ifdef CONFIG_PANIC_LOG_SAVE
+#include <linux/delay.h>
+#endif
 #define MODULE_NAME "msm_dmov"
 
 #define MSM_DMOV_CHANNEL_COUNT 16
@@ -417,6 +420,87 @@ void msm_dmov_enqueue_cmd(unsigned id, struct msm_dmov_cmd *cmd)
 }
 EXPORT_SYMBOL(msm_dmov_enqueue_cmd);
 
+#ifdef CONFIG_PANIC_LOG_SAVE
+int msm_panic_dmov_exec_cmd(unsigned id, unsigned int crci_mask, unsigned int cmdptr)
+{
+	struct msm_dmov_cmd cmd;
+	unsigned int status;
+	unsigned int ch_result;
+	int i;
+	int ret=0;
+	int adm = DMOV_ID_TO_ADM(id);
+	int ch = DMOV_ID_TO_CHAN(id);
+
+	cmd.cmdptr = cmdptr;
+	cmd.crci_mask = crci_mask;
+	cmd.complete_func = NULL;
+	cmd.exec_func = NULL;
+
+	clk_enable(msm_dmov_clk);
+
+	for(i=0;i<20; i++)
+	{
+		status = readl(DMOV_REG(DMOV_STATUS(ch), adm));
+
+		if (status &DMOV_STATUS_CMD_PTR_RDY)
+		{
+			writel(cmd.cmdptr, DMOV_REG(DMOV_CMD_PTR(ch), adm));
+			//PRINT_ERROR("msm_panic_dmov_exec_cmd: write end ch=%d\n",ch);
+			break;
+		}
+		else
+		{
+			mdelay(20);
+			writel(DMOV_FLUSH_TYPE, DMOV_REG(DMOV_FLUSH0(ch), adm));
+			PRINT_ERROR("msm_panic_dmov_exec_cmd(%d):init status=%x\n",id, status);
+		}
+	}
+
+	if (i >=20)
+	{
+		PRINT_ERROR("msm_panic_dmov_exec_cmd: DMOV not READY:status=%x\n", status);
+		clk_disable(msm_dmov_clk);
+		return -1;
+	}
+
+	for (i=0; i< 20; i++)
+	{
+		status = readl(DMOV_REG(DMOV_STATUS(ch), adm));
+
+		if (status &DMOV_STATUS_RSLT_VALID)
+		{
+			ch_result = readl(DMOV_REG(DMOV_RSLT(ch), adm));
+
+			//PRINT_ERROR("msm_panic_dmov_exec_cmd: ch_result=%x\n", ch_result);
+			if (ch_result ==0x80000002)
+			{
+				ret =0;
+				break;	
+			}
+			else
+			{	
+				ret =-1;
+				break;
+			}
+
+		}
+		else
+		{
+			mdelay(10);
+			PRINT_ERROR("msm_panic_dmov_exec_cmd: delay: status=%x\n",status);
+		}
+	}
+
+	if (i >=20)
+	{
+		PRINT_ERROR("msm_panic_dmov_exec_cmd: delay: status=%x\n",status);
+		ret =-1;
+	}
+	clk_disable(msm_dmov_clk);
+	return ret;
+}
+EXPORT_SYMBOL(msm_panic_dmov_exec_cmd);
+#endif
 void msm_dmov_flush(unsigned int id)
 {
 	unsigned long irq_flags;

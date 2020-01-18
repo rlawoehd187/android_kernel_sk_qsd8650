@@ -20,7 +20,7 @@
  * this needs to be before <linux/kernel.h> is loaded,
  * and <linux/sched.h> loads <linux/kernel.h>
  */
-#define DEBUG  1
+#define DEBUG  0
 
 #include <linux/earlysuspend.h>
 #include <linux/err.h>
@@ -37,6 +37,21 @@
 
 #include <mach/msm_rpcrouter.h>
 #include <mach/msm_battery.h>
+#include <linux/i2c/bq27505_battery.h>
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+#include <mach/board-s1.h>
+#include <linux/pm.h>
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+#include <mach/gpio.h>
+#include <linux/irq.h>
+#endif
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+#include <linux/wakelock.h>
+#endif
+#include <linux/i2c/tma340.h>
+extern void report_s1_hw_key(unsigned int key);
+#endif // CONFIG_MACH_QSD8X50_S1
 
 #define BATTERY_RPC_PROG	0x30000089
 #define BATTERY_RPC_VER_1_1	0x00010001
@@ -61,8 +76,18 @@
 #define BATTERY_CB_ID_ALL_ACTIV       	1
 #define BATTERY_CB_ID_LOW_VOL		2
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+#define LOW_BATTERY_POWER_OFF      3  // SOC LEVEL 3%
+#define BATTERY_LOW                3300
+  #if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES03)
+#define BATTERY_HIGH               4150
+  #else
+#define BATTERY_HIGH               4101
+  #endif
+#else
 #define BATTERY_LOW            	2800
 #define BATTERY_HIGH           	4300
+#endif
 
 #define ONCRPC_CHG_GET_GENERAL_STATUS_PROC 	12
 #define ONCRPC_CHARGER_API_VERSIONS_PROC 	0xffffffff
@@ -245,8 +270,50 @@ struct msm_battery_info {
 
 	u32 vbatt_modify_reply_avail;
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
+#endif
+#if defined(CONFIG_MACH_QSD8X50_S1)
+	struct wake_lock     wake_lock;
+#endif
 };
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+static bool use_gauge = false;
+static bool low_battery_poweroff = false;
+static int g_batt_curr = 0;
+static int g_batt_soc = 100;
+static bool check_only_charger = false;
+static bool usb_charger_connected = false;
+static bool is_early_suspend = false;
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+static int s1_tta_det, s1_chg_sts;
+//static int s1_chg_det;
+
+static void msm_batt_s1_isr_work_func(struct work_struct *work);
+static DECLARE_WORK(msm_batt_work, msm_batt_s1_isr_work_func);
+#endif
+
+#if (CONFIG_S1_BOARD_VER == S1_BOARD_VER_ES02)
+static bool gauge_checked = false;
+
+static void msm_batt_s1_probe_gauge_work_func(struct work_struct *work);
+static DECLARE_WORK(msm_batt_probe_gauge_work, msm_batt_s1_probe_gauge_work_func);
+#endif
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+//#define NEW_CHECK_CHARGER // 20100929 removed by SKT request
+#ifdef NEW_CHECK_CHARGER
+static bool called_from_chk_chg = false;
+static void msm_batt_s1_check_charger_work_func(struct work_struct *work);
+static DECLARE_DELAYED_WORK(msm_batt_check_charger_work, msm_batt_s1_check_charger_work_func);
+#endif /* NEW_CHECK_CHARGER */
+#endif
+
+static void msm_batt_s1_check_boot_work_func(struct work_struct *work);
+static DECLARE_DELAYED_WORK(msm_batt_check_boot_work, msm_batt_s1_check_boot_work_func);
+#endif /* CONFIG_MACH_QSD8X50_S1 */
 
 static struct msm_battery_info msm_batt_info = {
 	.batt_handle = INVALID_BATT_HANDLE,
@@ -321,6 +388,9 @@ static enum power_supply_property msm_batt_power_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
+#if 0// defined(CONFIG_MACH_QSD8X50_S1) && (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES03)
+	POWER_SUPPLY_PROP_TEMP,
+#endif
 };
 
 static int msm_batt_power_get_property(struct power_supply *psy,
@@ -347,11 +417,20 @@ static int msm_batt_power_get_property(struct power_supply *psy,
 		val->intval = msm_batt_info.voltage_min_design;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+#if defined(CONFIG_MACH_QSD8X50_S1) && (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES03)
+		bq27505_battery_property(BQ27505_STD_VOLT, &msm_batt_info.battery_voltage);
+#endif
 		val->intval = msm_batt_info.battery_voltage;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = msm_batt_info.batt_capacity;
 		break;
+#if 0// defined(CONFIG_MACH_QSD8X50_S1) && (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES03)
+	case POWER_SUPPLY_PROP_TEMP:
+		bq27505_battery_property(BQ27505_STD_TEMP, &msm_batt_info.battery_temp);
+		val->intval = msm_batt_info.battery_temp;
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -401,6 +480,13 @@ static u32 msm_batt_get_vbatt_voltage(void)
 		return 0;
 	}
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+	if (rep.battery_voltage > BATTERY_HIGH)
+		rep.battery_voltage = BATTERY_HIGH;
+	else if (rep.battery_voltage < BATTERY_LOW)
+		rep.battery_voltage = BATTERY_LOW;
+#endif
+
 	return rep.battery_voltage;
 }
 
@@ -408,6 +494,182 @@ static u32 msm_batt_get_vbatt_voltage(void)
 
 static int msm_batt_get_batt_chg_status(void)
 {
+#ifdef CONFIG_MACH_QSD8X50_S1
+	int err, volt;
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+	int old_tta_det;
+//	int old_chg_det;
+#endif
+
+	rep_batt_chg.v1.charger_status = CHARGER_STATUS_BAD;
+	rep_batt_chg.v1.charger_type = CHARGER_TYPE_NONE;
+	rep_batt_chg.v1.battery_status = BATTERY_STATUS_GOOD;
+
+	if (msm_pm_get_dev_boot_state() != DEV_BOOT_COMPLETED)
+	{
+		printk(KERN_INFO "%s, boot state not set !!!\n", __func__);
+		rep_batt_chg.v1.battery_voltage = BATTERY_HIGH;
+		rep_batt_chg.v1.battery_level = BATTERY_LEVEL_FULL;
+		rep_batt_chg.v1.battery_temp = 23;
+		return 0;
+	}
+
+#if (CONFIG_S1_BOARD_VER == S1_BOARD_VER_ES02)
+	if (!gauge_checked)
+	{
+		gauge_checked = true;
+		schedule_work(&msm_batt_probe_gauge_work);
+	}
+#elif (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES03)
+	if (!use_gauge && bq27505_battery_probed())
+		use_gauge = true;
+#endif
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+	old_tta_det = s1_tta_det;
+//	old_chg_det = s1_chg_det;
+#endif
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+	s1_tta_det = (gpio_get_value(S1_GPIO_TTA_nDET)) ? 0 : 1;
+//	s1_chg_det = (gpio_get_value(S1_GPIO_CHARGER_nDET)) ? 0 : 1;
+#if (CONFIG_S1_BOARD_VER <= S1_BOARD_VER_ES02)
+	s1_chg_sts = (gpio_get_value(S1_GPIO_CHARGER_STATUS)) ? 0 : 1;
+#endif
+
+	if (usb_charger_connected)
+	{
+		rep_batt_chg.v1.charger_type = CHARGER_TYPE_USB_PC;
+		rep_batt_chg.v1.charger_status = CHARGER_STATUS_GOOD;
+	}
+	else if (s1_tta_det)
+	{
+		rep_batt_chg.v1.charger_type = CHARGER_TYPE_WALL;
+		rep_batt_chg.v1.charger_status = CHARGER_STATUS_GOOD;
+	}
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+	if (!usb_charger_connected && s1_tta_det)
+		tma340_update_threshold(true);
+	else
+		tma340_update_threshold(false);
+#endif
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02) && defined(NEW_CHECK_CHARGER)
+	if (called_from_chk_chg)
+	{
+		if (use_gauge && (g_batt_curr <= 0) && (s1_tta_det && !usb_charger_connected))
+		{
+			printk(KERN_INFO "charger not connected !!! \n");
+			rep_batt_chg.v1.charger_status = CHARGER_STATUS_BAD;
+			rep_batt_chg.v1.charger_type = CHARGER_TYPE_NONE;
+		}
+		return 0;
+	}
+#endif // (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+
+	if (check_only_charger)
+	{
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+#ifdef NEW_CHECK_CHARGER
+		if (s1_tta_det && (old_tta_det ^ s1_tta_det))
+		{
+			printk(KERN_INFO "charger connected(isr) !!! \n");
+			if (use_gauge && !usb_charger_connected)  // only WALL_CHARGER
+			{
+				wake_lock(&msm_batt_info.wake_lock);
+				schedule_delayed_work(&msm_batt_check_charger_work, HZ * 5);
+			}
+		}
+#else
+		if (use_gauge && (g_batt_curr <= 0) &&
+				(!usb_charger_connected && s1_tta_det && !old_tta_det))  // only WALL_CHARGER
+		{
+			rep_batt_chg.v1.charger_status = CHARGER_STATUS_BAD;
+			rep_batt_chg.v1.charger_type = CHARGER_TYPE_NONE;
+		}
+#endif
+#endif // (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+		return 0;
+	}
+
+#endif // (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+
+	if (use_gauge)
+	{
+		err = bq27505_battery_property(BQ27505_STD_VOLT, &volt);
+		if (err)
+			volt = msm_batt_info.battery_voltage;
+		printk(KERN_INFO "%s, volt = %d, batt_volt = %d, err = %d \n",
+			__func__, volt, msm_batt_info.battery_voltage, err);
+
+		err = bq27505_battery_property(BQ27505_STD_SOC, &g_batt_soc);
+		printk(KERN_INFO "g_batt_soc = %d, batt_soc = %d, err = %d \n",
+			g_batt_soc, msm_batt_info.batt_capacity, err);
+
+#if 0
+		err = bq27505_battery_property(BQ27505_STD_TEMP, &temp);
+		if (err)
+			temp = msm_batt_info.battery_temp;
+		printk(KERN_INFO "temp = %d, err = %d \n", temp, err);
+#endif
+
+//		if (err == 0 && g_batt_soc == 100)
+		{
+			int fcc, rm;
+			err = bq27505_battery_property(BQ27505_STD_FCC, &fcc);
+			printk(KERN_INFO "fcc = %d, err = %d \n", fcc, err);
+
+			err = bq27505_battery_property(BQ27505_STD_RM, &rm);
+			printk(KERN_INFO "rm = %d, err = %d \n", rm, err);
+		}
+
+		err = bq27505_battery_property(BQ27505_STD_AI, &g_batt_curr);
+		printk(KERN_INFO "AI = %d, err = %d \n", g_batt_curr, err);
+
+		rep_batt_chg.v1.battery_voltage = volt;
+
+		rep_batt_chg.v1.battery_temp = 23; // temp;
+
+		if (g_batt_soc < 1) // 1%
+			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_DEAD;
+		else if (g_batt_soc < 20) // 20%
+			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_WEAK;
+		else if (g_batt_soc < 80) // 80%
+			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_GOOD;
+		else // 81 ~ 100%
+			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_FULL;
+
+		if (g_batt_curr == 0)
+			rep_batt_chg.v1.battery_status = BATTERY_STATUS_INVALID;
+		else
+			rep_batt_chg.v1.battery_status = BATTERY_STATUS_GOOD;
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+		if ((g_batt_curr <= 0) && (s1_tta_det && !usb_charger_connected))  // only WALL_CHARGER
+		{
+			printk(KERN_INFO "charger not connected 2 !!! \n");
+			rep_batt_chg.v1.charger_status = CHARGER_STATUS_BAD;
+			rep_batt_chg.v1.charger_type = CHARGER_TYPE_NONE;
+		}
+#endif // (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02)
+	}
+	else
+	{
+		rep_batt_chg.v1.battery_voltage = msm_batt_get_vbatt_voltage();
+
+		if (rep_batt_chg.v1.battery_voltage < 3310)
+			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_DEAD;
+		else if (rep_batt_chg.v1.battery_voltage < 3660)
+			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_WEAK;
+		else if (rep_batt_chg.v1.battery_voltage < 3940)
+			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_GOOD;
+		else
+			rep_batt_chg.v1.battery_level = BATTERY_LEVEL_FULL;
+
+		rep_batt_chg.v1.battery_temp = 23;
+	}
+#else
 	int rc ;
 	struct rpc_req_batt_chg {
 		struct rpc_request_hdr hdr;
@@ -440,11 +702,16 @@ static int msm_batt_get_batt_chg_status(void)
 		pr_err("%s: No battery/charger data in RPC reply\n", __func__);
 		return -EIO;
 	}
+#endif
 
 	return 0;
 }
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+void msm_batt_update_psy_status(void)
+#else
 static void msm_batt_update_psy_status(void)
+#endif
 {
 	static u32 unnecessary_event_count;
 	u32	charger_status;
@@ -453,6 +720,9 @@ static void msm_batt_update_psy_status(void)
 	u32	battery_level;
 	u32     battery_voltage;
 	u32	battery_temp;
+#ifdef CONFIG_MACH_QSD8X50_S1
+	u32 battery_capacity;
+#endif
 	struct	power_supply	*supp;
 
 	if (msm_batt_get_batt_chg_status())
@@ -508,7 +778,7 @@ static void msm_batt_update_psy_status(void)
 			msm_batt_info.current_chg_source = USB_CHG;
 			supp = &msm_psy_usb;
 		} else if (charger_type == CHARGER_TYPE_WALL) {
-			DBG_LIMIT("BATT: AC Wall changer plugged in\n");
+			DBG_LIMIT("BATT: AC Wall charger plugged in\n");
 			msm_batt_info.current_chg_source = AC_CHG;
 			supp = &msm_psy_ac;
 		} else {
@@ -520,7 +790,6 @@ static void msm_batt_update_psy_status(void)
 				DBG_LIMIT("BATT: No charger present\n");
 			msm_batt_info.current_chg_source = 0;
 			supp = &msm_psy_batt;
-
 			/* Correct charger status */
 			if (charger_status != CHARGER_STATUS_INVALID) {
 				DBG_LIMIT("BATT: No charging!\n");
@@ -566,6 +835,23 @@ static void msm_batt_update_psy_status(void)
 	if (!battery_voltage) {
 		if (charger_status == CHARGER_STATUS_INVALID) {
 			DBG_LIMIT("BATT: Read VBATT\n");
+#ifdef CONFIG_MACH_QSD8X50_S1
+			if (use_gauge)
+			{
+				if (check_only_charger)
+				{
+					battery_voltage = msm_batt_info.battery_voltage;
+				}
+				else
+				{
+					int err;
+					err = bq27505_battery_property(BQ27505_STD_VOLT, &battery_voltage);
+					if (err)
+						battery_voltage = msm_batt_info.battery_voltage;
+				}
+			}
+			else
+#endif
 			battery_voltage = msm_batt_get_vbatt_voltage();
 		} else
 			/* Use previous */
@@ -632,6 +918,32 @@ static void msm_batt_update_psy_status(void)
 	msm_batt_info.battery_level 	= battery_level;
 	msm_batt_info.battery_temp 	= battery_temp;
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+	if (use_gauge)
+	{
+		if (low_battery_poweroff)
+			battery_capacity = 0;
+		else if (check_only_charger)
+			battery_capacity = msm_batt_info.batt_capacity;
+		else
+			battery_capacity = g_batt_soc;
+
+		if (msm_batt_info.battery_voltage != battery_voltage)
+		{
+			DBG_LIMIT("BATT: voltage = %u mV\n", battery_voltage);
+			msm_batt_info.battery_voltage = battery_voltage;
+		}
+		if (msm_batt_info.batt_capacity != battery_capacity)
+		{
+			DBG_LIMIT("BATT: capacity = %d%%\n", battery_capacity);
+			msm_batt_info.batt_capacity = battery_capacity;
+		}
+
+		if (!supp)
+			supp = msm_batt_info.current_ps;
+	}
+	else
+#endif /* CONFIG_MACH_QSD8X50_S1 */
 	if (msm_batt_info.battery_voltage != battery_voltage) {
 		msm_batt_info.battery_voltage  	= battery_voltage;
 		msm_batt_info.batt_capacity =
@@ -643,12 +955,38 @@ static void msm_batt_update_psy_status(void)
 			supp = msm_batt_info.current_ps;
 	}
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+	if (msm_batt_info.batt_capacity == 100
+		&& (charger_status == CHARGER_STATUS_GOOD || charger_status == CHARGER_STATUS_WEAK))
+	{
+		msm_batt_info.battery_status = POWER_SUPPLY_STATUS_FULL;
+	}
+	if (charger_status == CHARGER_STATUS_BAD || charger_status == CHARGER_STATUS_INVALID)
+	{
+		if (msm_batt_info.batt_capacity <= LOW_BATTERY_POWER_OFF && !low_battery_poweroff)
+		{
+			low_battery_poweroff = true;
+
+			msm_batt_info.batt_capacity = 0;
+
+			wake_lock(&msm_batt_info.wake_lock);
+
+			bq27505_battery_interrupt(false);
+
+			printk(KERN_INFO "Low Battery Power Off 1 !!!! \n");
+		}
+	}
+#endif /* CONFIG_MACH_QSD8X50_S1 */
+
 	if (supp) {
 		msm_batt_info.current_ps = supp;
 		DBG_LIMIT("BATT: Supply = %s\n", supp->name);
 		power_supply_changed(supp);
 	}
 }
+#ifdef CONFIG_MACH_QSD8X50_S1
+EXPORT_SYMBOL(msm_batt_update_psy_status);
+#endif
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 struct batt_modify_client_req {
@@ -757,6 +1095,12 @@ void msm_batt_early_suspend(struct early_suspend *h)
 
 	pr_debug("%s: enter\n", __func__);
 
+#if defined(CONFIG_MACH_QSD8X50_S1)
+	is_early_suspend = true;
+
+	if (false == use_gauge)
+	{
+#endif
 	if (msm_batt_info.batt_handle != INVALID_BATT_HANDLE) {
 		rc = msm_batt_modify_client(msm_batt_info.batt_handle,
 				BATTERY_LOW, BATTERY_VOLTAGE_BELOW_THIS_LEVEL,
@@ -771,8 +1115,14 @@ void msm_batt_early_suspend(struct early_suspend *h)
 		pr_err("%s: ERROR. invalid batt_handle\n", __func__);
 		return;
 	}
+#ifdef CONFIG_MACH_QSD8X50_S1
+	}
+#endif
 
 	pr_debug("%s: exit\n", __func__);
+#ifdef CONFIG_MACH_QSD8X50_S1
+	printk(KERN_INFO "%s\n", __func__);
+#endif
 }
 
 void msm_batt_late_resume(struct early_suspend *h)
@@ -781,6 +1131,13 @@ void msm_batt_late_resume(struct early_suspend *h)
 
 	pr_debug("%s: enter\n", __func__);
 
+#if defined(CONFIG_MACH_QSD8X50_S1)
+	is_early_suspend = false;
+	msm_batt_update_psy_status();
+
+	if (false == use_gauge)
+	{
+#endif
 	if (msm_batt_info.batt_handle != INVALID_BATT_HANDLE) {
 		rc = msm_batt_modify_client(msm_batt_info.batt_handle,
 				BATTERY_LOW, BATTERY_ALL_ACTIVITY,
@@ -794,8 +1151,14 @@ void msm_batt_late_resume(struct early_suspend *h)
 		pr_err("%s: ERROR. invalid batt_handle\n", __func__);
 		return;
 	}
+#ifdef CONFIG_MACH_QSD8X50_S1
+	}
+#endif
 
 	pr_debug("%s: exit\n", __func__);
+#ifdef CONFIG_MACH_QSD8X50_S1
+	printk(KERN_INFO "%s\n", __func__);
+#endif
 }
 #endif
 
@@ -1100,6 +1463,7 @@ static u32 msm_batt_capacity(u32 current_voltage)
 }
 
 #ifndef CONFIG_BATTERY_MSM_FAKE
+#ifndef CONFIG_MACH_QSD8X50_S1
 int msm_batt_get_charger_api_version(void)
 {
 	int rc ;
@@ -1194,6 +1558,7 @@ int msm_batt_get_charger_api_version(void)
 	kfree(reply);
 	return rc;
 }
+#endif // !CONFIG_MACH_QSD8X50_S1
 
 static int msm_batt_cb_func(struct msm_rpc_client *client,
 			    void *buffer, int in_size)
@@ -1225,12 +1590,271 @@ static int msm_batt_cb_func(struct msm_rpc_client *client,
 	if (rc)
 		pr_err("%s: FAIL: sending reply. rc=%d\n", __func__, rc);
 
-	if (accept_status == RPC_ACCEPTSTAT_SUCCESS)
+	if (accept_status == RPC_ACCEPTSTAT_SUCCESS) {
+#if defined(CONFIG_MACH_QSD8X50_S1)
+		int volt = 0;
+		if (use_gauge)
+		{
+
+		}
+		else
+		{
+			volt = msm_batt_get_vbatt_voltage();
+			if (volt <= BATTERY_LOW)
+			{
+				if (!low_battery_poweroff
+					&& msm_batt_info.charger_status != CHARGER_STATUS_GOOD
+					&& msm_batt_info.charger_status != CHARGER_STATUS_WEAK)
+				{
+					low_battery_poweroff = true;
+
+					wake_lock(&msm_batt_info.wake_lock);
+
+					printk(KERN_INFO "Low Battery Power Off 2 !!!! \n");
+				}
+			}
+		}
+#endif
 		msm_batt_update_psy_status();
+	}
 
 	return rc;
 }
 #endif  /* CONFIG_BATTERY_MSM_FAKE */
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+void msm_batt_usb_charger_connected(bool connected)
+{
+	usb_charger_connected = connected;
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES01)
+	if (usb_charger_connected)
+	{
+		gpio_set_value(S1_GPIO_CHARGER_EN, 0);
+		printk(KERN_INFO "%s, usb charger enable\n", __func__);
+	}
+	else
+	{
+		gpio_set_value(S1_GPIO_CHARGER_EN, 1);
+		printk(KERN_INFO "%s, usb charger disable\n", __func__);
+	}
+#endif
+	check_only_charger = true;
+	msm_batt_update_psy_status();
+	check_only_charger = false;
+}
+EXPORT_SYMBOL(msm_batt_usb_charger_connected);
+
+#if (CONFIG_S1_BOARD_VER == S1_BOARD_VER_ES02)
+static void msm_batt_s1_probe_gauge_work_func(struct work_struct *work)
+{
+	int err, cnt, prev_tta, prev_chg, tta, chg;
+	int prev_curr, curr, curr_changed;
+
+	if (false == bq27505_battery_probed())
+		return;
+
+	if (is_early_suspend)
+	{
+		gauge_checked = false;
+		return;
+	}
+
+	err = bq27505_battery_property(BQ27505_STD_AI, &curr);
+	if (err || curr == 0)
+	{
+		gauge_checked = false;
+		return;
+	}
+
+	prev_tta = (gpio_get_value(S1_GPIO_TTA_nDET)) ? 0 : 1;
+	prev_chg = (gpio_get_value(S1_GPIO_CHARGER_nDET)) ? 0 : 1;
+	err = bq27505_battery_property(BQ27505_STD_AI, &prev_curr);
+	curr_changed = 0;
+	cnt = 0;
+	while (true)
+	{
+		if (is_early_suspend)
+		{
+			gauge_checked = false;
+			return;
+		}
+		msleep(100);
+		tta = (gpio_get_value(S1_GPIO_TTA_nDET)) ? 0 : 1;
+		chg = (gpio_get_value(S1_GPIO_CHARGER_nDET)) ? 0 : 1;
+		if (prev_tta != tta || prev_chg != chg)
+		{
+			prev_tta = tta;
+			prev_chg = chg;
+			cnt = 0;
+		}
+		else
+		{
+			err = bq27505_battery_property(BQ27505_STD_AI, &curr);
+			if ((prev_curr > 0 && curr < 0) || (prev_curr < 0 && curr > 0))
+				curr_changed = 1;
+			prev_curr = curr;
+			if (++cnt > 19) // if there is no change during 2sec
+				break;
+		}
+	}
+
+	if (is_early_suspend)
+	{
+		gauge_checked = false;
+		return;
+	}
+
+	err = bq27505_battery_property(BQ27505_STD_AI, &curr);
+	if (err || curr == 0)
+	{
+		gauge_checked = false;
+		return;
+	}
+
+	if (tta || chg)
+	{
+		if (!curr_changed && curr > 0)
+			use_gauge = true;
+	}
+	else if (curr < 0)
+		use_gauge = true;
+
+	if (!use_gauge)
+		bq27505_battery_interrupt(false);
+
+	msm_batt_update_psy_status();
+}
+#endif // (CONFIG_S1_BOARD_VER == S1_BOARD_VER_ES02)
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES02) && defined(NEW_CHECK_CHARGER)
+static void msm_batt_s1_check_charger_work_func(struct work_struct *work)
+{
+	int err;
+
+	printk(KERN_INFO "%s +\n", __func__);
+
+	err = bq27505_battery_property(BQ27505_STD_AI, &g_batt_curr);
+	printk(KERN_INFO "battery current = %d, err = %d \n", g_batt_curr, err);
+
+	if (err == 0 && g_batt_curr <= 0)
+	{
+		called_from_chk_chg = true;
+		msm_batt_update_psy_status();
+		called_from_chk_chg = false;
+	}
+
+	wake_unlock(&msm_batt_info.wake_lock);
+
+	printk(KERN_INFO "%s -\n", __func__);
+}
+#endif // (CONFIG_S1_BOARD_VER => S1_BOARD_VER_ES02) && defined(NEW_CHECK_CHARGER)
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+static void msm_batt_s1_isr_work_func(struct work_struct *work)
+{
+	check_only_charger = true;
+	msm_batt_update_psy_status();
+	check_only_charger = false;
+}
+
+//static irqreturn_t msm_batt_s1_charger_det_irq(int irq, void *dev_id);
+static irqreturn_t msm_batt_s1_tta_det_irq(int irq, void *dev_id)
+{
+	int tta_new = (gpio_get_value(S1_GPIO_TTA_nDET)) ? 0 : 1;
+//	int chg_new = (gpio_get_value(S1_GPIO_CHARGER_nDET)) ? 0 : 1;
+
+	if (s1_tta_det == tta_new)
+		return IRQ_HANDLED;
+
+	set_irq_type(MSM_GPIO_TO_INT(S1_GPIO_TTA_nDET),
+		(tta_new ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING));
+
+#if 0
+	if (tta_new)
+	{
+		disable_irq(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET));
+		set_irq_wake(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET), 0);
+	}
+	else
+	{
+		set_irq_type(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET),
+			(chg_new ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING));
+		enable_irq(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET));
+		set_irq_wake(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET), 1);
+	}
+#endif
+
+	schedule_work(&msm_batt_work);
+
+	return IRQ_HANDLED;
+}
+
+#if 0
+static irqreturn_t msm_batt_s1_charger_det_irq(int irq, void *dev_id)
+{
+	int chg_new = (gpio_get_value(S1_GPIO_CHARGER_nDET)) ? 0 : 1;
+
+	if (s1_chg_det == chg_new)
+		return IRQ_HANDLED;
+
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES01)
+	if (chg_new)
+	{
+		gpio_set_value(S1_GPIO_CHARGER_EN, 0);
+		printk(KERN_INFO "----- %s, usb charger enable\n", __func__);
+	}
+	else
+	{
+		gpio_set_value(S1_GPIO_CHARGER_EN, 1);
+		printk(KERN_INFO "----- %s, usb charger disable\n", __func__);
+	}
+#endif
+
+	set_irq_type(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET),
+		(chg_new ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING));
+
+	schedule_work(&msm_batt_work);
+
+	return IRQ_HANDLED;
+}
+#endif
+
+#if (CONFIG_S1_BOARD_VER <= S1_BOARD_VER_ES02)
+static irqreturn_t msm_batt_s1_charger_status_irq(int irq, void *dev_id)
+{
+	int chg_sts_new = (gpio_get_value(S1_GPIO_CHARGER_STATUS)) ? 0 : 1;
+
+	if (s1_chg_sts == chg_sts_new)
+		return IRQ_HANDLED;
+
+	set_irq_type(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_STATUS),
+		(chg_sts_new ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING));
+
+	schedule_work(&msm_batt_work);
+
+	return IRQ_HANDLED;
+}
+#endif // (CONFIG_S1_BOARD_VER <= S1_BOARD_VER_ES02)
+#endif // (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+
+static void msm_batt_s1_check_boot_work_func(struct work_struct *work)
+{
+	int cnt = 0;
+	while (cnt < 5 && (msm_pm_get_dev_boot_state() == DEV_BOOT_ON_PROGRESSING))
+	{
+		printk(KERN_INFO "%s, wait cnt = %d \n", __func__, cnt);
+		msleep(2000);
+		cnt++;
+	}
+
+	if (msm_pm_get_dev_boot_state() == DEV_BOOT_ON_PROGRESSING)
+		printk(KERN_INFO "%s, boot state not set !!!", __func__);
+	else
+		printk(KERN_INFO "%s, boot state already set !!!", __func__);
+
+	msm_pm_set_dev_boot_complete();
+}
+#endif // CONFIG_MACH_QSD8X50_S1
 
 static int __devinit msm_batt_probe(struct platform_device *pdev)
 {
@@ -1309,8 +1933,13 @@ static int __devinit msm_batt_probe(struct platform_device *pdev)
 	msm_batt_info.msm_psy_batt = &msm_psy_batt;
 
 #ifndef CONFIG_BATTERY_MSM_FAKE
+#if defined(CONFIG_MACH_QSD8X50_S1) && (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES03)
+	rc = msm_batt_register(BATTERY_LOW, BATTERY_VOLTAGE_BELOW_THIS_LEVEL,
+			       BATTERY_CB_ID_LOW_VOL, BATTERY_LOW);
+#else
 	rc = msm_batt_register(BATTERY_LOW, BATTERY_ALL_ACTIVITY,
 			       BATTERY_CB_ID_ALL_ACTIV, BATTERY_ALL_ACTIVITY);
+#endif
 	if (rc < 0) {
 		dev_err(&pdev->dev,
 			"%s: msm_batt_register failed rc = %d\n", __func__, rc);
@@ -1327,6 +1956,67 @@ static int __devinit msm_batt_probe(struct platform_device *pdev)
 		msm_batt_cleanup();
 		return rc;
 	}
+
+#if defined(CONFIG_MACH_QSD8X50_S1)
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+	if (pdata->config_gpio)
+		pdata->config_gpio();
+
+	s1_tta_det = (gpio_get_value(S1_GPIO_TTA_nDET)) ? 0 : 1;
+//	s1_chg_det = (gpio_get_value(S1_GPIO_CHARGER_nDET)) ? 0 : 1;
+	s1_chg_sts = (gpio_get_value(S1_GPIO_CHARGER_STATUS)) ? 0 : 1;
+
+	rc = request_irq(MSM_GPIO_TO_INT(S1_GPIO_TTA_nDET),
+				  msm_batt_s1_tta_det_irq,
+				  (s1_tta_det ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING),
+				  "s1_tta_det",
+				  NULL);
+	if (rc) {
+		printk(KERN_ERR "TTA_DET - Unable to get slot IRQ %d (%d)\n",
+			MSM_GPIO_TO_INT(S1_GPIO_TTA_nDET), rc);
+	}
+	else
+	{
+		set_irq_wake(MSM_GPIO_TO_INT(S1_GPIO_TTA_nDET), 1);
+	}
+
+#if 0
+	rc = request_irq(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET),
+				  msm_batt_s1_charger_det_irq,
+				  (s1_chg_det ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING),
+				  "s1_charger_det",
+				  NULL);
+	if (rc) {
+		printk(KERN_ERR "CHARGER_DET - Unable to get slot IRQ %d (%d)\n",
+			MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET), rc);
+	}
+	else {
+		if (s1_tta_det)
+			disable_irq(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET));
+		else
+			set_irq_wake(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET), 1);
+	}
+#endif
+
+#if (CONFIG_S1_BOARD_VER <= S1_BOARD_VER_ES02)
+	rc = request_irq(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_STATUS),
+				  msm_batt_s1_charger_status_irq,
+				  s1_chg_sts ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING,
+				  "s1_charger_status",
+				  NULL);
+	if (rc) {
+		printk(KERN_ERR "CHARGER_STATUS - Unable to get slot IRQ %d (%d)\n",
+			MSM_GPIO_TO_INT(S1_GPIO_CHARGER_STATUS), rc);
+	}
+#endif //(CONFIG_S1_BOARD_VER <= S1_BOARD_VER_ES01)
+#endif // (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+
+	wake_lock_init(&msm_batt_info.wake_lock, WAKE_LOCK_SUSPEND, "msm_battery");
+
+	schedule_delayed_work(&msm_batt_check_boot_work, HZ * 35);
+
+	printk(KERN_INFO "%s ok !!!\n", __func__);
+#endif // CONFIG_MACH_QSD8X50_S1
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	msm_batt_info.early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
@@ -1346,6 +2036,18 @@ static int __devinit msm_batt_probe(struct platform_device *pdev)
 static int __devexit msm_batt_remove(struct platform_device *pdev)
 {
 	int rc;
+
+#if defined(CONFIG_MACH_QSD8X50_S1)
+#if (CONFIG_S1_BOARD_VER >= S1_BOARD_VER_ES00)
+	free_irq(MSM_GPIO_TO_INT(S1_GPIO_TTA_nDET), NULL);
+//	free_irq(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_nDET), NULL);
+#if (CONFIG_S1_BOARD_VER <= S1_BOARD_VER_ES02)
+	free_irq(MSM_GPIO_TO_INT(S1_GPIO_CHARGER_STATUS), NULL);
+#endif
+#endif
+	wake_lock_destroy(&msm_batt_info.wake_lock);
+#endif
+
 	rc = msm_batt_cleanup();
 
 	if (rc < 0) {
@@ -1371,6 +2073,9 @@ static int __devinit msm_batt_init_rpc(void)
 
 #ifdef CONFIG_BATTERY_MSM_FAKE
 	pr_info("Faking MSM battery\n");
+#else
+#ifdef CONFIG_MACH_QSD8X50_S1
+	msm_batt_info.chg_api_version = CHG_RPC_VER_1_1;
 #else
 	msm_batt_info.chg_ep =
 		msm_rpc_connect_compatible(CHG_RPC_PROG, CHG_RPC_VER_2_2, 0);
@@ -1401,6 +2106,7 @@ static int __devinit msm_batt_init_rpc(void)
 	/* Fall back to 1.1 for default */
 	if (msm_batt_info.chg_api_version < 0)
 		msm_batt_info.chg_api_version = CHG_RPC_VER_1_1;
+#endif /* CONFIG_MACH_QSD8X50_S1 */
 
 	msm_batt_info.batt_client =
 		msm_rpc_register_client("battery", BATTERY_RPC_PROG,

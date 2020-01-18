@@ -562,6 +562,10 @@ static void fbcon_prepare_logo(struct vc_data *vc, struct fb_info *info,
 static void fbcon_prepare_logo(struct vc_data *vc, struct fb_info *info,
 			       int cols, int rows, int new_cols, int new_rows)
 {
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+	logo_shown = FBCON_LOGO_DONTSHOW;
+#else
 	/* Need to make room for the logo */
 	struct fbcon_ops *ops = info->fbcon_par;
 	int cnt, erase = vc->vc_video_erase_char, step;
@@ -642,6 +646,7 @@ static void fbcon_prepare_logo(struct vc_data *vc, struct fb_info *info,
 		logo_shown = FBCON_LOGO_DRAW;
 		vc->vc_top = logo_lines;
 	}
+#endif	
 }
 #endif /* MODULE */
 

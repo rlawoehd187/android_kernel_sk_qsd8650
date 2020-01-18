@@ -42,6 +42,14 @@
 #include "rndis.h"
 
 
+/* 
+ * Linux kernel patch for "USB: Fix kernel oops with g_ether and Windows".
+ * Refer "https://bugzilla.kernel.org/show_bug.cgi?id=16023".
+ * 2010-09-11 ykjeon@sk-w.com
+ */
+#define APPLY_PATCH_FOR_EMPTY_VENDOR_DESCRIPTION_OF_RNDIS
+
+
 /* The driver for your USB chip needs to support ep0 OUT to work with
  * RNDIS, plus all three CDC Ethernet endpoints (interrupt not optional).
  *
@@ -291,9 +299,19 @@ gen_ndis_query_resp (int configNr, u32 OID, u8 *buf, unsigned buf_len,
 	/* mandatory */
 	case OID_GEN_VENDOR_DESCRIPTION:
 		pr_debug("%s: OID_GEN_VENDOR_DESCRIPTION\n", __func__);
+#ifdef APPLY_PATCH_FOR_EMPTY_VENDOR_DESCRIPTION_OF_RNDIS /* 2010-09-11 ykjeon@sk-w.com */
+		if ( rndis_per_dev_params [configNr].vendorDescr ) {
+			length = strlen (rndis_per_dev_params [configNr].vendorDescr);
+			memcpy (outbuf,
+				rndis_per_dev_params [configNr].vendorDescr, length);
+		} else {
+			outbuf[0] = 0;
+		}
+#else		
 		length = strlen (rndis_per_dev_params [configNr].vendorDescr);
 		memcpy (outbuf,
 			rndis_per_dev_params [configNr].vendorDescr, length);
+#endif
 		retval = 0;
 		break;
 

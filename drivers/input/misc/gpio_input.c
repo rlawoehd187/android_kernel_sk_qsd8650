@@ -1,5 +1,5 @@
-#warning compile out
-#if 0
+//#warning compile out
+#if 1
 /* drivers/input/misc/gpio_input.c
  *
  * Copyright (C) 2007 Google, Inc.

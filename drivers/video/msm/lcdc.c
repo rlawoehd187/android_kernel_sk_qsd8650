@@ -37,6 +37,11 @@
 #include <mach/msm_reqs.h>
 
 #include "msm_fb.h"
+#ifdef CONFIG_MACH_QSD8X50_S1
+#include "../arch/arm/mach-msm/proc_comm.h"
+#define CLKRGM_MDP_LCDC_PCLK_CLK	0x0A
+#define CLKRGM_MDP_LCDC_PAD_PCLK_CLK	0x0B
+#endif
 
 static int lcdc_probe(struct platform_device *pdev);
 static int lcdc_remove(struct platform_device *pdev);
@@ -89,6 +94,11 @@ static int lcdc_on(struct platform_device *pdev)
 	int ret = 0;
 	struct msm_fb_data_type *mfd;
 	unsigned long panel_pixclock_freq, pm_qos_rate;
+#ifdef CONFIG_MACH_QSD8X50_S1
+	unsigned int mdp_lcdc_pclk_clk_id = CLKRGM_MDP_LCDC_PCLK_CLK;
+	unsigned int mdp_lcdc_pad_pclk_clk_id = CLKRGM_MDP_LCDC_PAD_PCLK_CLK;
+	unsigned int inv = TRUE;
+#endif
 
 	mfd = platform_get_drvdata(pdev);
 	panel_pixclock_freq = mfd->fbi->var.pixclock;
@@ -122,6 +132,10 @@ static int lcdc_on(struct platform_device *pdev)
 	if (lcdc_pdata && lcdc_pdata->lcdc_gpio_config)
 		ret = lcdc_pdata->lcdc_gpio_config(1);
 
+#ifdef CONFIG_MACH_QSD8X50_S1
+	msm_proc_comm(PCOM_CLK_REGIME_SEC_SEL_CLK_INV, &mdp_lcdc_pclk_clk_id, &inv);
+	msm_proc_comm(PCOM_CLK_REGIME_SEC_SEL_CLK_INV, &mdp_lcdc_pad_pclk_clk_id, &inv);
+#endif
 	ret = panel_next_on(pdev);
 
 out:

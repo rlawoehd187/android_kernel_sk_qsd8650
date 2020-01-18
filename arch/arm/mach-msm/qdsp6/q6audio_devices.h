@@ -204,6 +204,20 @@ static struct q6_device_info q6_audio_devices[] = {
 		.codec	= Q6_ICODEC_TX,
 		.hw	= Q6_HW_HEADSET,
 	},
+
+#ifdef CONFIG_MACH_QSD8X50_S1
+	/* ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC device is routed to AUX_IN not 
+	   SPKR_PHONE_MIC in S1 */
+	{
+		.id	= ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC,
+		.cad_id	= CAD_HW_DEVICE_ID_SPKR_PHONE_MIC, //CAD_HW_DEVICE_ID_AUX_IN,
+		.path	= ADIE_PATH_AUX_IN_TX,
+		.rate   = 8000,
+		.dir	= Q6_TX,
+		.codec	= Q6_ICODEC_TX,
+		.hw	= Q6_HW_HANDSET,
+	},
+#else
 	{
 		.id	= ADSP_AUDIO_DEVICE_ID_SPKR_PHONE_MIC,
 		.cad_id	= CAD_HW_DEVICE_ID_SPKR_PHONE_MIC,
@@ -213,6 +227,8 @@ static struct q6_device_info q6_audio_devices[] = {
 		.codec	= Q6_ICODEC_TX,
 		.hw	= Q6_HW_SPEAKER,
 	},
+#endif
+		
 	{
 		.id	= ADSP_AUDIO_DEVICE_ID_HANDSET_DUAL_MIC,
 		.cad_id	= CAD_HW_DEVICE_ID_HANDSET_DUAL_MIC_ENDFIRE,

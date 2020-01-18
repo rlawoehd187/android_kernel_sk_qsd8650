@@ -172,7 +172,7 @@ config MACH_QSD8X50_SURF
 	depends on ARCH_QSD8X50
 	depends on MSM_SOC_REV_NONE
 	depends on MSM_STACKED_MEMORY
-	default y
+	default n
 	bool "QSD8x50 SURF"
 	help
 	  Support for the Qualcomm QSD8x50 SURF eval board.
@@ -301,6 +301,22 @@ config MACH_MSM8X60_FFA
 	select SMP_PARALLEL_START
 	help
 	  Support for the Qualcomm MSM8x60 FFA eval board.
+
+config MACH_QSD8X50_S1
+	depends on ARCH_QSD8X50
+	depends on MSM_SOC_REV_NONE
+	depends on MSM_STACKED_MEMORY
+	default y
+	bool "QSD8x50 S1"
+	help
+	  Support for the SKTelesys S1 board.
+
+config S1_BOARD_VER
+	depends on MACH_QSD8X50_S1
+	int "S1 Board version number, PT01=0, PT02=1, WS01=2, ES00=3, ES01=4, ES02=5"
+	default "4"
+	help
+	  PT01 = 0, PT02 = 1, WS01 = 2, ES00 = 3, ES01 = 4, ES02 = 5
 
 endmenu
 
@@ -542,7 +558,7 @@ config HTC_PWRSINK
 
 config QSD_SVS
 	bool "QSD Static Voltage Scaling"
-	depends on (MACH_QSD8X50_SURF || MACH_QSD8X50_FFA || MACH_QSD8X50_COMET || MACH_QSD8X50A_SURF || MACH_QSD8X50A_FFA)
+	depends on (MACH_QSD8X50_SURF || MACH_QSD8X50_FFA || MACH_QSD8X50_COMET || MACH_QSD8X50A_SURF || MACH_QSD8X50A_FFA || MACH_QSD8X50_S1)
 	default y
 	select TPS65023
 	help
@@ -550,7 +566,8 @@ config QSD_SVS
 
 config QSD_PMIC_DEFAULT_DCDC1
 	int "PMIC default output voltage"
-	depends on (MACH_QSD8X50_SURF || MACH_QSD8X50_FFA || MACH_QSD8X50_COMET || MACH_QSD8X50A_SURF || MACH_QSD8X50A_FFA)
+	depends on (MACH_QSD8X50_SURF || MACH_QSD8X50_FFA || MACH_QSD8X50_COMET || MACH_QSD8X50A_SURF || MACH_QSD8X50A_FFA || MACH_QSD8X50_S1)
+
 	default 1250
 	help
 	  This is the PMIC voltage at Linux kernel boot.
