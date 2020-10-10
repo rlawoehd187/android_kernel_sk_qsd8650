@@ -78,19 +78,15 @@ EXPORT_SYMBOL_GPL(pci_disable_pcie_error_reporting);
 int pci_cleanup_aer_uncorrect_error_status(struct pci_dev *dev)
 {
 	int pos;
-	u32 status, mask;
+	u32 status;
 
 	pos = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ERR);
 	if (!pos)
 		return -EIO;
 
 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_STATUS, &status);
-	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_SEVER, &mask);
-	if (dev->error_state == pci_channel_io_normal)
-		status &= ~mask; /* Clear corresponding nonfatal bits */
-	else
-		status &= mask; /* Clear corresponding fatal bits */
-	pci_write_config_dword(dev, pos + PCI_ERR_UNCOR_STATUS, status);
+	if (status)
+		pci_write_config_dword(dev, pos + PCI_ERR_UNCOR_STATUS, status);
 
 	return 0;
 }
@@ -848,8 +844,6 @@ void aer_isr(struct work_struct *work)
 		e_src = get_e_source(rpc);
 	}
 	mutex_unlock(&rpc->rpc_mutex);
-
-	wake_up(&rpc->wait_release);
 }
 
 /**

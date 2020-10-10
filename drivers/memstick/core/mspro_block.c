@@ -734,7 +734,7 @@ static int mspro_block_complete_req(struct memstick_dev *card, int error)
 
 		if (error || (card->current_mrq.tpc == MSPRO_CMD_STOP)) {
 			if (msb->data_dir == READ) {
-				for (cnt = 0; cnt < msb->current_seg; cnt++)
+				for (cnt = 0; cnt < msb->current_seg; cnt++) {
 					t_len += msb->req_sg[cnt].length
 						 / msb->page_size;
 
@@ -742,6 +742,7 @@ static int mspro_block_complete_req(struct memstick_dev *card, int error)
 						t_len += msb->current_page - 1;
 
 					t_len *= msb->page_size;
+				}
 			}
 		} else
 			t_len = blk_rq_bytes(msb->block_req);
@@ -1330,12 +1331,13 @@ static void mspro_block_remove(struct memstick_dev *card)
 	struct mspro_block_data *msb = memstick_get_drvdata(card);
 	unsigned long flags;
 
-	del_gendisk(msb->disk);
-	dev_dbg(&card->dev, "mspro block remove\n");
 	spin_lock_irqsave(&msb->q_lock, flags);
 	msb->eject = 1;
 	blk_start_queue(msb->queue);
 	spin_unlock_irqrestore(&msb->q_lock, flags);
+
+	del_gendisk(msb->disk);
+	dev_dbg(&card->dev, "mspro block remove\n");
 
 	blk_cleanup_queue(msb->queue);
 	msb->queue = NULL;

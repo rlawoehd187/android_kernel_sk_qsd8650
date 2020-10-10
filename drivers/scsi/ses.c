@@ -67,6 +67,7 @@ static int ses_probe(struct device *dev)
 static int ses_recv_diag(struct scsi_device *sdev, int page_code,
 			 void *buf, int bufflen)
 {
+	int ret;
 	unsigned char cmd[] = {
 		RECEIVE_DIAGNOSTIC,
 		1,		/* Set PCV bit */
@@ -75,9 +76,26 @@ static int ses_recv_diag(struct scsi_device *sdev, int page_code,
 		bufflen & 0xff,
 		0
 	};
+	unsigned char recv_page_code;
 
-	return scsi_execute_req(sdev, cmd, DMA_FROM_DEVICE, buf, bufflen,
+	ret =  scsi_execute_req(sdev, cmd, DMA_FROM_DEVICE, buf, bufflen,
 				NULL, SES_TIMEOUT, SES_RETRIES, NULL);
+	if (unlikely(!ret))
+		return ret;
+
+	recv_page_code = ((unsigned char *)buf)[0];
+
+	if (likely(recv_page_code == page_code))
+		return ret;
+
+	/* successful diagnostic but wrong page code.  This happens to some
+	 * USB devices, just print a message and pretend there was an error */
+
+	sdev_printk(KERN_ERR, sdev,
+		    "Wrong diagnostic page; asked for %d got %u\n",
+		    page_code, recv_page_code);
+
+	return -EINVAL;
 }
 
 static int ses_send_diag(struct scsi_device *sdev, int page_code,
@@ -157,6 +175,10 @@ static unsigned char *ses_get_page2_descriptor(struct enclosure_device *edev,
 	return NULL;
 }
 
+/* For device slot and array device slot elements, byte 3 bit 6
+ * is "fault sensed" while byte 3 bit 5 is "fault reqstd". As this
+ * code stands these bits are shifted 4 positions right so in
+ * sysfs they will appear as bits 2 and 1 respectively. Strange. */
 static void ses_get_fault(struct enclosure_device *edev,
 			  struct enclosure_component *ecomp)
 {
@@ -178,7 +200,7 @@ static int ses_set_fault(struct enclosure_device *edev,
 		/* zero is disabled */
 		break;
 	case ENCLOSURE_SETTING_ENABLED:
-		desc[2] = 0x02;
+		desc[3] = 0x20;
 		break;
 	default:
 		/* SES doesn't do the SGPIO blink settings */
@@ -389,9 +411,9 @@ static void ses_enclosure_data_process(struct enclosure_device *edev,
 		len = (desc_ptr[2] << 8) + desc_ptr[3];
 		/* skip past overall descriptor */
 		desc_ptr += len + 4;
-		if (ses_dev->page10)
-			addl_desc_ptr = ses_dev->page10 + 8;
 	}
+	if (ses_dev->page10)
+		addl_desc_ptr = ses_dev->page10 + 8;
 	type_ptr = ses_dev->page1 + 12 + ses_dev->page1[11];
 	components = 0;
 	for (i = 0; i < types; i++, type_ptr += 4) {
@@ -429,7 +451,15 @@ static void ses_enclosure_data_process(struct enclosure_device *edev,
 			if (desc_ptr)
 				desc_ptr += len;
 
-			if (addl_desc_ptr)
+			if (addl_desc_ptr &&
+			    /* only find additional descriptions for specific devices */
+			    (type_ptr[0] == ENCLOSURE_COMPONENT_DEVICE ||
+			     type_ptr[0] == ENCLOSURE_COMPONENT_ARRAY_DEVICE ||
+			     type_ptr[0] == ENCLOSURE_COMPONENT_SAS_EXPANDER ||
+			     /* these elements are optional */
+			     type_ptr[0] == ENCLOSURE_COMPONENT_SCSI_TARGET_PORT ||
+			     type_ptr[0] == ENCLOSURE_COMPONENT_SCSI_INITIATOR_PORT ||
+			     type_ptr[0] == ENCLOSURE_COMPONENT_CONTROLLER_ELECTRONICS))
 				addl_desc_ptr += addl_desc_ptr[1] + 2;
 
 		}
@@ -591,8 +621,6 @@ static int ses_intf_add(struct device *cdev,
 		ses_dev->page10_len = len;
 		buf = NULL;
 	}
-	kfree(hdr_buf);
-
 	scomp = kzalloc(sizeof(struct ses_component) * components, GFP_KERNEL);
 	if (!scomp)
 		goto err_free;
@@ -603,6 +631,8 @@ static int ses_intf_add(struct device *cdev,
 		err = PTR_ERR(edev);
 		goto err_free;
 	}
+
+	kfree(hdr_buf);
 
 	edev->scratch = ses_dev;
 	for (i = 0; i < components; i++)

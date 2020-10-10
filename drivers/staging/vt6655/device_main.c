@@ -1089,11 +1089,13 @@ device_found1(struct pci_dev *pcid, const struct pci_device_id *ent)
     }
 //2008-07-21-01<Add>by MikeLiu
 //register wpadev
+#if 0
    if(wpa_set_wpadev(pDevice, 1)!=0) {
      printk("Fail to Register WPADEV?\n");
         unregister_netdev(pDevice->dev);
         free_netdev(dev);
    }
+#endif
     device_print_info(pDevice);
     pci_set_drvdata(pcid, pDevice);
     return 0;
@@ -1603,6 +1605,10 @@ static int device_rx_srv(PSDevice pDevice, UINT uIdx) {
 //        DBG_PRT(MSG_LEVEL_DEBUG, KERN_INFO "pDevice->pCurrRD = %x, works = %d\n", pRD, works);
         if (works++>15)
             break;
+
+        if (!pRD->pRDInfo->skb)
+            break;
+
         if (device_receive_frame(pDevice, pRD)) {
             if (!device_alloc_rx_buf(pDevice,pRD)) {
                     DBG_PRT(MSG_LEVEL_ERR, KERN_ERR

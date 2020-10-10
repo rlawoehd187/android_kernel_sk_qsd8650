@@ -121,8 +121,8 @@ static int inet6_create(struct net *net, struct socket *sock, int protocol)
 	int try_loading_module = 0;
 	int err;
 
-	if (!current_has_network())
-		return -EACCES;
+	if (protocol < 0 || protocol >= IPPROTO_MAX)
+		return -EINVAL;
 
 	if (sock->type != SOCK_RAW &&
 	    sock->type != SOCK_DGRAM &&
@@ -1089,6 +1089,8 @@ static int __init inet6_init(void)
 		       "reboot required to enable\n");
 		goto out;
 	}
+
+	initialize_hashidentrnd();
 
 	err = proto_register(&tcpv6_prot, 1);
 	if (err)

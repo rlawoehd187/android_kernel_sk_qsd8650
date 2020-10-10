@@ -679,6 +679,9 @@ static int dn_create(struct net *net, struct socket *sock, int protocol)
 {
 	struct sock *sk;
 
+	if (protocol < 0 || protocol > SK_PROTOCOL_MAX)
+		return -EINVAL;
+
 	if (net != &init_net)
 		return -EAFNOSUPPORT;
 
@@ -1554,6 +1557,8 @@ static int __dn_getsockopt(struct socket *sock, int level,int optname, char __us
 		case DSO_LINKINFO:
 			if (r_len > sizeof(struct linkinfo_dn))
 				r_len = sizeof(struct linkinfo_dn);
+
+			memset(&link, 0, sizeof(link));
 
 			switch(sock->state) {
 				case SS_CONNECTING:

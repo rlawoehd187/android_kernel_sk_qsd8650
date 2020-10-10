@@ -162,7 +162,7 @@ static int sl_alloc_bufs(struct slip *sl, int mtu)
 	if (cbuff == NULL)
 		goto err_exit;
 	slcomp = slhc_init(16, 16);
-	if (slcomp == NULL)
+	if (IS_ERR(slcomp))
 		goto err_exit;
 #endif
 	spin_lock_bh(&sl->lock);
@@ -850,7 +850,9 @@ static int slip_open(struct tty_struct *tty)
 	/* Done.  We have linked the TTY line to a channel. */
 	rtnl_unlock();
 	tty->receive_room = 65536;	/* We don't flow control */
-	return sl->dev->base_addr;
+
+	/* TTY layer expects 0 on success */
+	return 0;
 
 err_free_bufs:
 	sl_free_bufs(sl);

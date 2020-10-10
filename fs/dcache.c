@@ -1175,9 +1175,12 @@ struct dentry *d_obtain_alias(struct inode *inode)
 	spin_unlock(&tmp->d_lock);
 
 	spin_unlock(&dcache_lock);
+	security_d_instantiate(tmp, inode);
 	return tmp;
 
  out_iput:
+	if (res && !IS_ERR(res))
+		security_d_instantiate(res, inode);
 	iput(inode);
 	return res;
 }
@@ -1907,7 +1910,7 @@ char *__d_path(const struct path *path, struct path *root,
 	struct dentry *dentry = path->dentry;
 	struct vfsmount *vfsmnt = path->mnt;
 	char *end = buffer + buflen;
-	char *retval;
+	char *retval, *tail;
 
 	spin_lock(&vfsmount_lock);
 	prepend(&end, &buflen, "\0", 1);
@@ -1920,6 +1923,7 @@ char *__d_path(const struct path *path, struct path *root,
 	/* Get '/' right */
 	retval = end-1;
 	*retval = '/';
+	tail = end;
 
 	for (;;) {
 		struct dentry * parent;
@@ -1927,6 +1931,14 @@ char *__d_path(const struct path *path, struct path *root,
 		if (dentry == root->dentry && vfsmnt == root->mnt)
 			break;
 		if (dentry == vfsmnt->mnt_root || IS_ROOT(dentry)) {
+			/* Escaped? */
+			if (dentry != vfsmnt->mnt_root) {
+				buflen += (tail - end);
+				end = tail;
+				prepend(&end, &buflen, "(unreachable)/", 14);
+				retval = end;
+				goto out;
+			}
 			/* Global root? */
 			if (vfsmnt->mnt_parent == vfsmnt) {
 				goto global_root;

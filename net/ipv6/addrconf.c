@@ -407,9 +407,6 @@ static struct inet6_dev * ipv6_add_dev(struct net_device *dev)
 	    dev->type == ARPHRD_TUNNEL6 ||
 	    dev->type == ARPHRD_SIT ||
 	    dev->type == ARPHRD_NONE) {
-		printk(KERN_INFO
-		       "%s: Disabled Privacy Extensions\n",
-		       dev->name);
 		ndev->cnf.use_tempaddr = -1;
 	} else {
 		in6_dev_hold(ndev);
@@ -504,8 +501,11 @@ static int addrconf_fixup_forwarding(struct ctl_table *table, int *p, int old)
 	if (p == &net->ipv6.devconf_dflt->forwarding)
 		return 0;
 
-	if (!rtnl_trylock())
+	if (!rtnl_trylock()) {
+		/* Restore the original values before restarting */
+		*p = old;
 		return restart_syscall();
+	}
 
 	if (p == &net->ipv6.devconf_all->forwarding) {
 		__s32 newf = net->ipv6.devconf_all->forwarding;
@@ -920,12 +920,10 @@ retry:
 	if (ifp->flags & IFA_F_OPTIMISTIC)
 		addr_flags |= IFA_F_OPTIMISTIC;
 
-	ift = !max_addresses ||
-	      ipv6_count_addresses(idev) < max_addresses ?
-		ipv6_add_addr(idev, &addr, tmp_plen,
-			      ipv6_addr_type(&addr)&IPV6_ADDR_SCOPE_MASK,
-			      addr_flags) : NULL;
-	if (!ift || IS_ERR(ift)) {
+	ift = ipv6_add_addr(idev, &addr, tmp_plen,
+			    ipv6_addr_type(&addr)&IPV6_ADDR_SCOPE_MASK,
+			    addr_flags);
+	if (IS_ERR(ift)) {
 		in6_ifa_put(ifp);
 		in6_dev_put(idev);
 		printk(KERN_INFO
@@ -3995,12 +3993,15 @@ int addrconf_sysctl_forward(ctl_table *ctl, int write,
 {
 	int *valp = ctl->data;
 	int val = *valp;
+	loff_t pos = *ppos;
 	int ret;
 
 	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
 
 	if (write)
 		ret = addrconf_fixup_forwarding(ctl, valp, val);
+	if (ret)
+		*ppos = pos;
 	return ret;
 }
 
@@ -4037,6 +4038,40 @@ static int addrconf_sysctl_forward_strategy(ctl_table *table,
 
 	*valp = new;
 	return addrconf_fixup_forwarding(table, valp, val);
+}
+
+static
+struct ctl_table *addrconf_sysctl_mtu_init(struct ctl_table *newctl,
+					   const struct ctl_table *ctl)
+{
+	struct inet6_dev *idev = ctl->extra1;
+	static int min_mtu = IPV6_MIN_MTU;
+
+	*newctl = *ctl;
+	newctl->extra1 = &min_mtu;
+	newctl->extra2 = idev ? &idev->dev->mtu : NULL;
+	return newctl;
+}
+
+static
+int addrconf_sysctl_mtu(struct ctl_table *ctl, int write,
+			void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table lctl;
+
+	return proc_dointvec_minmax(addrconf_sysctl_mtu_init(&lctl, ctl),
+				    write, buffer, lenp, ppos);
+}
+
+static int addrconf_sysctl_mtu_strategy(struct ctl_table *ctl,
+					void __user *oldval,
+					size_t __user *oldlenp,
+					void __user *newval, size_t newlen)
+{
+	struct ctl_table lctl;
+
+	return sysctl_intvec(addrconf_sysctl_mtu_init(&lctl, ctl),
+			     oldval, oldlenp, newval, newlen);
 }
 
 static void dev_disable_change(struct inet6_dev *idev)
@@ -4079,8 +4114,11 @@ static int addrconf_disable_ipv6(struct ctl_table *table, int *p, int old)
 	if (p == &net->ipv6.devconf_dflt->disable_ipv6)
 		return 0;
 
-	if (!rtnl_trylock())
+	if (!rtnl_trylock()) {
+		/* Restore the original values before restarting */
+		*p = old;
 		return restart_syscall();
+	}
 
 	if (p == &net->ipv6.devconf_all->disable_ipv6) {
 		__s32 newf = net->ipv6.devconf_all->disable_ipv6;
@@ -4099,12 +4137,15 @@ int addrconf_sysctl_disable(ctl_table *ctl, int write,
 {
 	int *valp = ctl->data;
 	int val = *valp;
+	loff_t pos = *ppos;
 	int ret;
 
 	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
 
 	if (write)
 		ret = addrconf_disable_ipv6(ctl, valp, val);
+	if (ret)
+		*ppos = pos;
 	return ret;
 }
 
@@ -4139,7 +4180,8 @@ static struct addrconf_sysctl_table
 			.data		=	&ipv6_devconf.mtu6,
 			.maxlen		=	sizeof(int),
 			.mode		=	0644,
-			.proc_handler	=	proc_dointvec,
+			.proc_handler	=	addrconf_sysctl_mtu,
+			.strategy	=	addrconf_sysctl_mtu_strategy,
 		},
 		{
 			.ctl_name	=	NET_IPV6_ACCEPT_RA,

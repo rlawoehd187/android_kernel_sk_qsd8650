@@ -8,6 +8,7 @@
 #include <linux/mempolicy.h>
 #include <linux/swap.h>
 #include <linux/swapops.h>
+#include <linux/security.h>
 
 #include <asm/elf.h>
 #include <asm/uaccess.h>
@@ -206,6 +207,7 @@ static void show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 	int flags = vma->vm_flags;
 	unsigned long ino = 0;
 	unsigned long long pgoff = 0;
+	unsigned long start;
 	dev_t dev = 0;
 	int len;
 
@@ -216,8 +218,14 @@ static void show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 	}
 
+	/* We don't show the stack guard page in /proc/maps */
+	start = vma->vm_start;
+	if (vma->vm_flags & VM_GROWSDOWN)
+		if (!vma_stack_continue(vma->vm_prev, vma->vm_start))
+			start += PAGE_SIZE;
+
 	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu %n",
-			vma->vm_start,
+			start,
 			vma->vm_end,
 			flags & VM_READ ? 'r' : '-',
 			flags & VM_WRITE ? 'w' : '-',
@@ -237,31 +245,12 @@ static void show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 		const char *name = arch_vma_name(vma);
 		if (!name) {
 			if (mm) {
-				if (vma->vm_start <= mm->start_brk &&
-						vma->vm_end >= mm->brk) {
+				if (vma->vm_start <= mm->brk &&
+						vma->vm_end >= mm->start_brk) {
 					name = "[heap]";
 				} else if (vma->vm_start <= mm->start_stack &&
 					   vma->vm_end >= mm->start_stack) {
 					name = "[stack]";
-				} else {
-					unsigned long stack_start;
-					struct proc_maps_private *pmp;
-
-					pmp = m->private;
-					stack_start = pmp->task->stack_start;
-
-					if (vma->vm_start <= stack_start &&
-					    vma->vm_end >= stack_start) {
-						pad_len_spaces(m, len);
-						seq_printf(m,
-						 "[threadstack:%08lx]",
-#ifdef CONFIG_STACK_GROWSUP
-						 vma->vm_end - stack_start
-#else
-						 stack_start - vma->vm_start
-#endif
-						);
-					}
 				}
 			} else {
 				name = "[vdso]";
@@ -551,8 +540,8 @@ const struct file_operations proc_clear_refs_operations = {
 };
 
 struct pagemapread {
-	int pos, len;
-	u64 *buffer;
+	u64 __user *out, *end;
+	bool show_pfn;
 };
 
 #define PM_ENTRY_BYTES      sizeof(u64)
@@ -601,14 +590,14 @@ static u64 swap_pte_to_pagemap_entry(pte_t pte)
 	return swp_type(e) | (swp_offset(e) << MAX_SWAPFILES_SHIFT);
 }
 
-static u64 pte_to_pagemap_entry(pte_t pte)
+static u64 pte_to_pagemap_entry(struct pagemapread *pm, pte_t pte)
 {
 	u64 pme = 0;
 	if (is_swap_pte(pte))
 		pme = PM_PFRAME(swap_pte_to_pagemap_entry(pte))
 			| PM_PSHIFT(PAGE_SHIFT) | PM_SWAP;
 	else if (pte_present(pte))
-		pme = PM_PFRAME(pte_pfn(pte))
+		pme = (pm->show_pfn ? PM_PFRAME(pte_pfn(pte)) : 0)
 			| PM_PSHIFT(PAGE_SHIFT) | PM_PRESENT;
 	return pme;
 }
@@ -636,7 +625,7 @@ static int pagemap_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 		if (vma && (vma->vm_start <= addr) &&
 		    !is_vm_hugetlb_page(vma)) {
 			pte = pte_offset_map(pmd, addr);
-			pfn = pte_to_pagemap_entry(*pte);
+			pfn = pte_to_pagemap_entry(pm, *pte);
 			/* unmap before userspace copy */
 			pte_unmap(pte);
 		}
@@ -705,6 +694,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
 
 	if (!count)
 		goto out_task;
+
+	/* do not disclose physical addresses: attack vector */
+	pm.show_pfn = !security_capable(file->f_cred, CAP_SYS_ADMIN);
 
 	mm = get_task_mm(task);
 	if (!mm)
